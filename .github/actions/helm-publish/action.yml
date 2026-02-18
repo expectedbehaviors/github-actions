@@ -1,0 +1,100 @@
+# Composite action: package Helm chart (version from release tag), set image tag in values, upload .tgz to GitHub Release.
+# Caller job must: checkout with fetch-depth: 0 (optional), permissions: contents: write.
+# Requires GITHUB_TOKEN. On release use event tag; on workflow_dispatch use release_tag input; else latest release.
+# Outputs: tag, version, chart_tarball
+
+name: 'Helm chart publish'
+description: 'Package Helm chart with version from release, upload tarball to GitHub Release'
+inputs:
+  chart_path:
+    description: 'Path to chart directory (e.g. helm)'
+    required: false
+    default: 'helm'
+  chart_name:
+    description: 'Chart name for tarball (e.g. organizr-tab-controller)'
+    required: true
+  values_image_tag_key:
+    description: 'yq path to set image tag in values (e.g. organizr-tab-controller.controllers.main.containers.main.image.tag)'
+    required: true
+  helm_repo_name:
+    description: 'Helm repo name for dependency update (e.g. bjw-s)'
+    required: false
+    default: 'bjw-s'
+  helm_repo_url:
+    description: 'Helm repo URL for dependency update'
+    required: false
+    default: 'https://bjw-s-labs.github.io/helm-charts'
+  release_tag:
+    description: 'Release tag override (for workflow_dispatch); e.g. v0.1.0'
+    required: false
+outputs:
+  tag:
+    description: 'Release tag used'
+    value: ${{ steps.version.outputs.tag }}
+  version:
+    description: 'Version string (tag without v prefix)'
+    value: ${{ steps.version.outputs.version }}
+  chart_tarball:
+    description: 'Tarball filename (e.g. chart-0.1.0.tgz)'
+    value: ${{ steps.package.outputs.chart_tarball }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Set version from release tag
+      id: version
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        if [ "${{ github.event_name }}" = "release" ]; then
+          TAG="${{ github.event.release.tag_name }}"
+        elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.release_tag }}" ]; then
+          TAG="${{ inputs.release_tag }}"
+        else
+          TAG=$(gh api "repos/${{ github.repository }}/releases?per_page=1" | jq -r '.[0].tag_name')
+        fi
+        VERSION="${TAG#v}"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "Version: $VERSION"
+      shell: bash
+
+    - name: Install Helm
+      uses: azure/setup-helm@v4
+      with:
+        version: 'v3.14.0'
+
+    - name: Install yq
+      run: sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 && sudo chmod +x /usr/local/bin/yq
+      shell: bash
+
+    - name: Prepare chart for release (image tag = chart version)
+      run: |
+        mkdir -p build
+        cp -r ${{ inputs.chart_path }} build/chart
+        cd build/chart
+        KEY="${{ inputs.values_image_tag_key }}"
+        FIRST="${KEY%%.*}"
+        REST="${KEY#*.}"
+        YQ_PATH=".\"${FIRST}\".${REST} = strenv(VERSION)"
+        yq e "$YQ_PATH" -i values.yaml
+        cd ../..
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      shell: bash
+
+    - name: Add dependency and package
+      id: package
+      run: |
+        helm repo add ${{ inputs.helm_repo_name }} ${{ inputs.helm_repo_url }}
+        helm dependency update build/chart
+        VERSION="${{ steps.version.outputs.version }}"
+        helm package build/chart --version "$VERSION" --app-version "$VERSION"
+        echo "chart_tarball=${{ inputs.chart_name }}-${VERSION}.tgz" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Upload chart to GitHub Release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release upload "${{ steps.version.outputs.tag }}" ${{ inputs.chart_name }}-${{ steps.version.outputs.version }}.tgz --clobber
+      shell: bash
