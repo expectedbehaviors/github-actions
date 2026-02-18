@@ -1,11 +1,13 @@
 # Composite action: package Helm chart (version from release tag), set image tag in values, upload .tgz to GitHub Release.
-# Caller job must: checkout with fetch-depth: 0 (optional), permissions: contents: write.
-# Requires GITHUB_TOKEN. On release use event tag; on workflow_dispatch use release_tag input; else latest release.
+# Caller must pass github_token (e.g. secrets.GITHUB_TOKEN). Checkout with fetch-depth: 0 (optional), permissions: contents: write.
 # Outputs: tag, version, chart_tarball
 
 name: 'Helm chart publish'
 description: 'Package Helm chart with version from release, upload tarball to GitHub Release'
 inputs:
+  github_token:
+    description: 'GitHub token for gh CLI (pass secrets.GITHUB_TOKEN)'
+    required: true
   chart_path:
     description: 'Path to chart directory (e.g. helm)'
     required: false
@@ -43,7 +45,7 @@ runs:
     - name: Set version from release tag
       id: version
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ inputs.github_token }}
       run: |
         if [ "${{ github.event_name }}" = "release" ]; then
           TAG="${{ github.event.release.tag_name }}"
@@ -94,7 +96,7 @@ runs:
 
     - name: Upload chart to GitHub Release
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ inputs.github_token }}
       run: |
         gh release upload "${{ steps.version.outputs.tag }}" ${{ inputs.chart_name }}-${{ steps.version.outputs.version }}.tgz --clobber
       shell: bash
