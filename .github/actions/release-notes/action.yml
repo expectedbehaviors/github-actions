@@ -1,11 +1,17 @@
 # Composite action: get merged PR body for release tag, summarize via OpenAI, update GitHub Release notes.
-# Caller job must: checkout. Secrets: OPENAI_API_KEY (required), GITHUB_TOKEN.
+# Caller must pass openai_api_key and github_token (e.g. from secrets.OPENAI_API_KEY / secrets.GITHUB_TOKEN).
 # On release use event tag; on workflow_dispatch use release_tag input; else latest release.
 # Outputs: tag, summary
 
 name: 'Release notes from PR'
 description: 'Summarize merged PR as release notes via OpenAI and update GitHub Release body'
 inputs:
+  openai_api_key:
+    description: 'OpenAI API key (pass secrets.OPENAI_API_KEY)'
+    required: true
+  github_token:
+    description: 'GitHub token for gh CLI (pass secrets.GITHUB_TOKEN)'
+    required: true
   release_tag:
     description: 'Release tag override (for workflow_dispatch); e.g. v0.1.0'
     required: false
@@ -26,7 +32,7 @@ runs:
     - name: Get release tag
       id: tag
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ inputs.github_token }}
       run: |
         if [ "${{ github.event_name }}" = "release" ]; then
           echo "tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
@@ -41,7 +47,7 @@ runs:
     - name: Find PR merged for this release
       id: pr
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ inputs.github_token }}
       run: |
         TAG="${{ steps.tag.outputs.tag }}"
         COMMIT_SHA=$(gh api "repos/${{ github.repository }}/git/ref/tags/${TAG}" | jq -r '.object.sha')
@@ -52,17 +58,9 @@ runs:
         echo "EOF" >> $GITHUB_OUTPUT
       shell: bash
 
-    - name: Require OPENAI_API_KEY
-      run: |
-        if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-          echo "::error title=Release notes::OPENAI_API_KEY secret is required. Add it under Settings → Secrets and variables → Actions."
-          exit 1
-        fi
-      shell: bash
-
     - name: Summarize release notes (OpenAI)
       env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        OPENAI_API_KEY: ${{ inputs.openai_api_key }}
         PR_BODY: ${{ steps.pr.outputs.body }}
         OPENAI_MODEL: ${{ inputs.openai_model }}
       id: summarize
@@ -82,7 +80,7 @@ runs:
 
     - name: Update release body
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ inputs.github_token }}
         BODY: ${{ steps.summarize.outputs.summary }}
       run: |
         gh release edit "${{ steps.tag.outputs.tag }}" --notes "$BODY"

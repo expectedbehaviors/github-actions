@@ -12,7 +12,7 @@ with:
   # action inputs
 ```
 
-Secrets (e.g. `DOCKERHUB_USERNAME`, `OPENAI_API_KEY`) are defined in the **calling** repo; the actions run in that context and receive them automatically.
+Secrets must be **passed as inputs** from the calling workflow (e.g. `github_token: ${{ secrets.GITHUB_TOKEN }}`). Composite actions from another repo do not automatically receive the caller's secrets.
 
 ---
 
@@ -26,9 +26,10 @@ Bump patch version from the latest `v*` tag and create a GitHub Release (tag + r
 
 **Inputs**
 
-| Input        | Required | Default | Description |
-|-------------|----------|---------|-------------|
-| `tag_prefix` | No       | `v`     | Prefix for version tags (e.g. `v` → `v0.1.0`). |
+| Input         | Required | Default | Description |
+|---------------|----------|---------|-------------|
+| `github_token` | Yes     | —       | GitHub token for gh CLI (pass `secrets.GITHUB_TOKEN`). |
+| `tag_prefix`  | No       | `v`     | Prefix for version tags (e.g. `v` → `v0.1.0`). |
 
 **Outputs**
 
@@ -44,7 +45,8 @@ Bump patch version from the latest `v*` tag and create a GitHub Release (tag + r
     fetch-depth: 0
 - uses: owner/github-actions/.github/actions/release-on-merge@v1
   id: release
-# steps.release.outputs.tag
+  with:
+    github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ---
@@ -53,7 +55,7 @@ Bump patch version from the latest `v*` tag and create a GitHub Release (tag + r
 
 Build a multi-platform image with Docker Buildx and push to Docker Hub. Uses GHA cache. Tag is derived from the event: release ref, manual `image_tag` input, or `sha-<short-sha>`.
 
-**Caller job:** `checkout`. Secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
+**Caller job:** `checkout`. Pass `docker_username` and `docker_token` from your repo secrets.
 
 **Inputs**
 
@@ -61,6 +63,8 @@ Build a multi-platform image with Docker Buildx and push to Docker Hub. Uses GHA
 |------------------|----------|----------------------------|-------------|
 | `image_name`     | Yes      | —                          | Image name (e.g. `my-app`). |
 | `repo_prefix`    | Yes      | —                          | Registry/repo prefix (e.g. Docker Hub username). |
+| `docker_username`| Yes      | —                          | Docker Hub username (pass `secrets.DOCKERHUB_USERNAME`). |
+| `docker_token`   | Yes      | —                          | Docker Hub token (pass `secrets.DOCKERHUB_TOKEN`). |
 | `dockerfile_path`| No       | `./docker/Dockerfile`      | Path to Dockerfile. |
 | `context`        | No       | `.`                        | Build context. |
 | `platforms`      | No       | `linux/amd64,linux/arm64`  | Comma-separated platforms. |
@@ -80,8 +84,8 @@ Build a multi-platform image with Docker Buildx and push to Docker Hub. Uses GHA
   with:
     image_name: organizr-tab-controller
     repo_prefix: expectedbehaviors
-    dockerfile_path: ./docker/Dockerfile
-    platforms: linux/amd64,linux/arm64
+    docker_username: ${{ secrets.DOCKERHUB_USERNAME }}
+    docker_token: ${{ secrets.DOCKERHUB_TOKEN }}
 ```
 
 ---
@@ -90,12 +94,13 @@ Build a multi-platform image with Docker Buildx and push to Docker Hub. Uses GHA
 
 Resolve version from the current GitHub Release (or latest), package the Helm chart with that version, set the image tag in `values.yaml` at a given path, and upload the tarball to the same release.
 
-**Caller job:** `checkout`, `permissions: contents: write`. Uses `GITHUB_TOKEN`.
+**Caller job:** `checkout`, `permissions: contents: write`. Pass `github_token`.
 
 **Inputs**
 
 | Input                  | Required | Default                         | Description |
 |------------------------|----------|---------------------------------|-------------|
+| `github_token`         | Yes      | —                               | GitHub token for gh CLI (pass `secrets.GITHUB_TOKEN`). |
 | `chart_path`           | No       | `helm`                          | Path to chart directory. |
 | `chart_name`           | Yes      | —                               | Chart name (used for tarball, e.g. `my-chart`). |
 | `values_image_tag_key` | Yes      | —                               | Dot path in values for image tag (e.g. `organizr-tab-controller.controllers.main.containers.main.image.tag`). First segment can contain hyphens. |
@@ -119,7 +124,7 @@ Resolve version from the current GitHub Release (or latest), package the Helm ch
     fetch-depth: 0
 - uses: owner/github-actions/.github/actions/helm-publish@v1
   with:
-    chart_path: helm
+    github_token: ${{ secrets.GITHUB_TOKEN }}
     chart_name: organizr-tab-controller
     values_image_tag_key: organizr-tab-controller.controllers.main.containers.main.image.tag
 ```
@@ -130,14 +135,16 @@ Resolve version from the current GitHub Release (or latest), package the Helm ch
 
 Resolve the release tag (from event or input), find the merged PR for that release, summarize the PR body with OpenAI into 2–4 bullet points, and set the GitHub Release body to that summary.
 
-**Caller job:** `checkout`, `permissions: contents: write`. Secrets: `OPENAI_API_KEY` (required), `GITHUB_TOKEN`.
+**Caller job:** `checkout`, `permissions: contents: write`. Pass `openai_api_key` and `github_token`.
 
 **Inputs**
 
-| Input         | Required | Default        | Description |
-|---------------|----------|----------------|-------------|
-| `release_tag` | No       | —              | Override release tag (e.g. for workflow_dispatch). |
-| `openai_model`| No       | `gpt-4o-mini`  | OpenAI model for summarization. |
+| Input            | Required | Default        | Description |
+|------------------|----------|----------------|-------------|
+| `openai_api_key` | Yes      | —              | OpenAI API key (pass `secrets.OPENAI_API_KEY`). |
+| `github_token`  | Yes      | —              | GitHub token for gh CLI (pass `secrets.GITHUB_TOKEN`). |
+| `release_tag`    | No       | —              | Override release tag (e.g. for workflow_dispatch). |
+| `openai_model`   | No       | `gpt-4o-mini`  | OpenAI model for summarization. |
 
 **Outputs**
 
@@ -152,7 +159,8 @@ Resolve the release tag (from event or input), find the merged PR for that relea
 - uses: actions/checkout@v4
 - uses: owner/github-actions/.github/actions/release-notes@v1
   with:
-    release_tag: ''   # optional override
+    openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ---

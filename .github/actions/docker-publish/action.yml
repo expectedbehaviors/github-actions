@@ -1,5 +1,5 @@
 # Composite action: build and push Docker image (Buildx, GHA cache).
-# Caller job must: checkout. Secrets: DOCKERHUB_USERNAME, DOCKERHUB_TOKEN (or use registry inputs).
+# Caller must pass docker_username and docker_token (e.g. from secrets.DOCKERHUB_USERNAME / DOCKERHUB_TOKEN).
 # On release event uses tag from ref; on workflow_dispatch uses image_tag input; else sha-<short-sha>.
 # Outputs: tag (image tag used)
 
@@ -11,6 +11,12 @@ inputs:
     required: true
   repo_prefix:
     description: 'Registry/repo prefix (e.g. docker.io/username or expectedbehaviors)'
+    required: true
+  docker_username:
+    description: 'Docker Hub username (pass secrets.DOCKERHUB_USERNAME)'
+    required: true
+  docker_token:
+    description: 'Docker Hub token (pass secrets.DOCKERHUB_TOKEN)'
     required: true
   dockerfile_path:
     description: 'Path to Dockerfile'
@@ -54,8 +60,8 @@ runs:
     - name: Log in to Docker Hub
       uses: docker/login-action@v3
       with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        username: ${{ inputs.docker_username }}
+        password: ${{ inputs.docker_token }}
 
     - name: Build and push
       uses: docker/build-push-action@v6
