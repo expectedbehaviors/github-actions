@@ -1,4 +1,5 @@
 # Composite action: package Helm chart (version from release tag), set image tag in values, upload .tgz to GitHub Release.
+# When publish_to_pages is true: enables GitHub Pages (branch gh-pages, path /) via API only if not already configured, then pushes chart index to gh-pages.
 # Caller must pass github_token (e.g. secrets.GITHUB_TOKEN). Checkout with fetch-depth: 0 (optional), permissions: contents: write.
 # Outputs: tag, version, chart_tarball
 
@@ -30,7 +31,7 @@ inputs:
     description: 'Release tag override (for workflow_dispatch); e.g. v0.1.0'
     required: false
   publish_to_pages:
-    description: 'If true, publish chart and index to gh-pages branch so Helm repo is available at https://<owner>.github.io/<repo>'
+    description: 'If true (default), enable GitHub Pages (gh-pages branch) when needed, then publish chart and index so Helm repo is at https://<owner>.github.io/<repo>. Set to false to skip.'
     required: false
     default: true
 outputs:
@@ -107,6 +108,21 @@ runs:
         GH_TOKEN: ${{ inputs.github_token }}
       run: |
         gh release upload "${{ steps.version.outputs.tag }}" ${{ inputs.chart_name }}-${{ steps.version.outputs.version }}.tgz --clobber
+      shell: bash
+
+    - name: Enable GitHub Pages if not enabled (gh-pages branch)
+      if: ${{ inputs.publish_to_pages == 'true' }}
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        # Only enable Pages when not already configured; do not change existing config.
+        if ! gh api "repos/${{ github.repository }}/pages" &>/dev/null; then
+          BODY='{"source":{"branch":"gh-pages","path":"/"},"build_type":"legacy"}'
+          gh api -X POST "repos/${{ github.repository }}/pages" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" --input - <<< "$BODY"
+          echo "Enabled GitHub Pages (branch: gh-pages, path: /)."
+        else
+          echo "GitHub Pages already configured; skipping."
+        fi
       shell: bash
 
     - name: Publish Helm repo to GitHub Pages

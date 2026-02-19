@@ -92,7 +92,7 @@ Build a multi-platform image with Docker Buildx and push to Docker Hub. Uses GHA
 
 ### helm-publish
 
-Resolve version from the current GitHub Release (or latest), package the Helm chart with that version, set the image tag in `values.yaml` at a given path, and upload the tarball to the same release.
+Resolve version from the current GitHub Release (or latest), package the Helm chart with that version, set the image tag in `values.yaml` at a given path, and upload the tarball to the same release. By default also enables GitHub Pages (branch `gh-pages`) when needed and publishes the chart index there so the Helm repo is available at `https://<owner>.github.io/<repo>`.
 
 **Caller job:** `checkout`, `permissions: contents: write`. Pass `github_token`.
 
@@ -107,6 +107,7 @@ Resolve version from the current GitHub Release (or latest), package the Helm ch
 | `helm_repo_name`       | No       | `bjw-s`                         | Helm repo name for `helm dependency update`. |
 | `helm_repo_url`        | No       | `https://bjw-s-labs.github.io/helm-charts` | Helm repo URL. |
 | `release_tag`          | No       | —                               | Override release tag (e.g. for workflow_dispatch). |
+| `publish_to_pages`     | No       | **`true`**                     | Enable GitHub Pages (gh-pages) when needed and publish chart index. Set to `false` to skip. |
 
 **Outputs**
 
