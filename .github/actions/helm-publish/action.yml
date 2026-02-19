@@ -116,10 +116,16 @@ runs:
         GH_TOKEN: ${{ inputs.github_token }}
       run: |
         # Only enable Pages when not already configured; do not change existing config.
+        # GITHUB_TOKEN often lacks Pages API permission (403); don't fail so we can still push to gh-pages.
+        set +e
         if ! gh api "repos/${{ github.repository }}/pages" &>/dev/null; then
-          BODY='{"source":{"branch":"gh-pages","path":"/"},"build_type":"legacy"}'
-          gh api -X POST "repos/${{ github.repository }}/pages" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" --input - <<< "$BODY"
-          echo "Enabled GitHub Pages (branch: gh-pages, path: /)."
+          OUT=$(gh api -X POST "repos/${{ github.repository }}/pages" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" --input - <<< '{"source":{"branch":"gh-pages","path":"/"},"build_type":"legacy"}' 2>&1)
+          if [ $? -eq 0 ]; then
+            echo "Enabled GitHub Pages (branch: gh-pages, path: /)."
+          else
+            echo "Could not enable GitHub Pages via API (GITHUB_TOKEN may lack permission): $OUT"
+            echo "Enable manually: Settings → Pages → Deploy from branch → branch: gh-pages. Pushing index next."
+          fi
         else
           echo "GitHub Pages already configured; skipping."
         fi

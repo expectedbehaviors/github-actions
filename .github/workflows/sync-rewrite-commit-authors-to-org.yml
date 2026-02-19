@@ -79,7 +79,7 @@ jobs:
               if [ "$DRY_RUN" = "true" ]; then
                 echo "Would add/update (dry run)."
               else
-                (cd "$dir" && git config user.email "$GIT_USER_EMAIL" && git config user.name "$GIT_USER_NAME" && git add .github/workflows/rewrite-commit-authors.yml && git diff --staged --quiet || (git commit -m "ci: add or update rewrite-commit-authors workflow (PII scrub)" && git push))
+                (cd "$dir" && git config user.email "$GIT_USER_EMAIL" && git config user.name "$GIT_USER_NAME" && git add .github/workflows/rewrite-commit-authors.yml && git diff --staged --quiet || (git commit -m "ci: add or update rewrite-commit-authors workflow (PII scrub)" && (git push || echo "::warning::Push failed for $repo (check ORG_REPO_TOKEN has write access)")))
               fi
             fi
             rm -rf "$dir"
