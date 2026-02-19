@@ -1,10 +1,11 @@
 # Composite action: package Helm chart (version from release tag), set image tag in values, upload .tgz to GitHub Release.
+# Updates Chart.yaml (version + appVersion) in the repo to match the released version and pushes the commit so git stays in sync.
 # When publish_to_pages is true: enables GitHub Pages (branch gh-pages, path /) via API only if not already configured, then pushes chart index to gh-pages.
 # Caller must pass github_token (e.g. secrets.GITHUB_TOKEN). Checkout with fetch-depth: 0 (optional), permissions: contents: write.
 # Outputs: tag, version, chart_tarball
 
 name: 'Helm chart publish'
-description: 'Package Helm chart with version from release, upload tarball to GitHub Release'
+description: 'Package Helm chart with version from release, upload tarball to GitHub Release, sync Chart.yaml to released version'
 inputs:
   github_token:
     description: 'GitHub token for gh CLI (pass secrets.GITHUB_TOKEN)'
@@ -108,6 +109,27 @@ runs:
         GH_TOKEN: ${{ inputs.github_token }}
       run: |
         gh release upload "${{ steps.version.outputs.tag }}" ${{ inputs.chart_name }}-${{ steps.version.outputs.version }}.tgz --clobber
+      shell: bash
+
+    - name: Sync Chart.yaml to released version (keep git in sync)
+      run: |
+        CHART_PATH="${{ inputs.chart_path }}"
+        CHART_YAML="${GITHUB_WORKSPACE}/${CHART_PATH}/Chart.yaml"
+        if [ ! -f "$CHART_YAML" ]; then
+          echo "Chart.yaml not found at $CHART_YAML, skipping sync"
+          exit 0
+        fi
+        VERSION="${{ steps.version.outputs.version }}"
+        yq e ".version = \"$VERSION\" | .appVersion = \"$VERSION\"" -i "$CHART_YAML"
+        git -C "$GITHUB_WORKSPACE" config user.name "github-actions[bot]"
+        git -C "$GITHUB_WORKSPACE" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git -C "$GITHUB_WORKSPACE" add "${CHART_PATH}/Chart.yaml"
+        if git -C "$GITHUB_WORKSPACE" diff --staged --quiet; then
+          echo "Chart.yaml already at $VERSION"
+        else
+          git -C "$GITHUB_WORKSPACE" commit -m "chore(helm): set Chart.yaml version to $VERSION"
+          git -C "$GITHUB_WORKSPACE" push origin HEAD
+        fi
       shell: bash
 
     - name: Enable GitHub Pages if not enabled (gh-pages branch)

@@ -1,9 +1,10 @@
 # Composite action: bump patch version, create tag and GitHub Release.
+# When no tags exist, starts at 0.1.0 so first release is 0.1.1.
 # Caller must pass github_token (e.g. secrets.GITHUB_TOKEN). Checkout with fetch-depth: 0, permissions: contents: write.
 # Outputs: tag (e.g. v0.1.1)
 
 name: 'Release on merge to main'
-description: 'Bump patch version from latest v* tag and create GitHub Release'
+description: 'Bump patch version from latest tag (default 0.1.0 when none) and create GitHub Release'
 inputs:
   github_token:
     description: 'GitHub token for gh CLI (pass secrets.GITHUB_TOKEN)'
@@ -23,7 +24,7 @@ runs:
       id: version
       run: |
         TAG_PREFIX="${{ inputs.tag_prefix }}"
-        LATEST=$(git describe --tags --match "${TAG_PREFIX}*" --abbrev=0 2>/dev/null || echo "${TAG_PREFIX}0.0.0")
+        LATEST=$(git describe --tags --match "${TAG_PREFIX}*" --abbrev=0 2>/dev/null || echo "${TAG_PREFIX}0.1.0")
         LATEST="${LATEST#$TAG_PREFIX}"
         MAJOR="${LATEST%%.*}"
         REST="${LATEST#*.}"
