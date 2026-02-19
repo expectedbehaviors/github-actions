@@ -46,6 +46,7 @@ jobs:
           GH_TOKEN: ${{ secrets.ORG_REPO_TOKEN }}
           INPUT_ORG: ${{ github.event.inputs.org }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
+          SELF_REPO: ${{ github.repository }}
           GIT_USER_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com"
           GIT_USER_NAME: "github-actions[bot]"
         run: |
@@ -63,6 +64,7 @@ jobs:
           '
           while read -r repo; do
             [ -z "$repo" ] && continue
+            [ "$repo" = "$SELF_REPO" ] && echo "--- $repo --- (skip self)" && continue
             dir="/tmp/$(echo "$repo" | tr / -)"
             echo "--- $repo ---"
             git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${repo}.git" "$dir" 2>/dev/null || { echo "Clone failed, skip"; continue; }
