@@ -46,7 +46,11 @@ jobs:
           GH_TOKEN: ${{ secrets.ORG_REPO_TOKEN }}
           INPUT_ORG: ${{ github.event.inputs.org }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
+          GIT_USER_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com"
+          GIT_USER_NAME: "github-actions[bot]"
         run: |
+          git config --global user.email "$GIT_USER_EMAIL"
+          git config --global user.name "$GIT_USER_NAME"
           ORG="${INPUT_ORG:-expectedbehaviors}"
           DRY_RUN="${DRY_RUN:-false}"
           DESIRED='name: Rewrite commit authors (PII purge)
@@ -62,6 +66,8 @@ jobs:
             dir="/tmp/$(echo "$repo" | tr / -)"
             echo "--- $repo ---"
             git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${repo}.git" "$dir" 2>/dev/null || { echo "Clone failed, skip"; continue; }
+            git -C "$dir" config user.email "$GIT_USER_EMAIL"
+            git -C "$dir" config user.name "$GIT_USER_NAME"
             mkdir -p "$dir/.github/workflows"
             path="$dir/.github/workflows/rewrite-commit-authors.yml"
             if [ -f "$path" ] && diff -q <(echo "$DESIRED") "$path" >/dev/null 2>&1; then
@@ -71,7 +77,7 @@ jobs:
               if [ "$DRY_RUN" = "true" ]; then
                 echo "Would add/update (dry run)."
               else
-                (cd "$dir" && git add .github/workflows/rewrite-commit-authors.yml && git diff --staged --quiet || (git commit -m "ci: add or update rewrite-commit-authors workflow (PII scrub)" && git push))
+                (cd "$dir" && git config user.email "$GIT_USER_EMAIL" && git config user.name "$GIT_USER_NAME" && git add .github/workflows/rewrite-commit-authors.yml && git diff --staged --quiet || (git commit -m "ci: add or update rewrite-commit-authors workflow (PII scrub)" && git push))
               fi
             fi
             rm -rf "$dir"
