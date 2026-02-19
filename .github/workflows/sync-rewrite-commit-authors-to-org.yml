@@ -54,7 +54,7 @@ jobs:
             workflow_dispatch:
           jobs:
             call-rewrite:
-              uses: expectedbehaviors/github-actions/.github/workflows/rewrite-commit-authors/rewrite-commit-authors.yml@main
+              uses: expectedbehaviors/github-actions/.github/workflows/rewrite-commit-authors.yml@main
               secrets: inherit
           '
           while read -r repo; do
