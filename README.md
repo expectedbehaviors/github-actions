@@ -189,7 +189,7 @@ Rewrite every commit in the repository to use new author and committer name/emai
 ```yaml
 jobs:
   call-rewrite:
-    uses: expectedbehaviors/github-actions/.github/workflows/rewrite-commit-authors/rewrite-commit-authors.yml@main
+    uses: expectedbehaviors/github-actions/.github/workflows/rewrite-commit-authors.yml@main
     secrets: inherit
 ```
 
@@ -210,10 +210,10 @@ jobs:
 
 Goal: every org repo can run "Rewrite commit authors" so anyone can scrub commit author/committer PII from history. Author is set to whoever runs the workflow (GitHub username + noreply email).
 
-1. **Roles:** The **reusable workflow** (`.github/workflows/rewrite-commit-authors/`) is the callee—other repos call it and it runs in their context. It does checkout, sets author from `github.actor`, then calls the **composite action** (`.github/actions/rewrite-commit-authors/`), which contains the actual rewrite logic. Each repo only needs a small caller workflow (snippet below) that triggers the reusable workflow.
+1. **Roles:** The **reusable workflow** (`.github/workflows/rewrite-commit-authors.yml`) is the callee—other repos call it and it runs in their context. It does checkout, sets author from `github.actor`, then calls the **composite action** (`.github/actions/rewrite-commit-authors/`), which contains the actual rewrite logic. Each repo only needs a small caller workflow (snippet below) that triggers the reusable workflow.
 
 2. **Automated sync (recommended):** A workflow in this repo syncs the caller to all org repos. Run it manually or on a schedule.
-   - **Workflow:** [.github/workflows/sync-rewrite-commit-authors-to-org/](.github/workflows/sync-rewrite-commit-authors-to-org/) — **Actions → "Sync rewrite-commit-authors to org repos" → Run workflow.**
+   - **Workflow:** [.github/workflows/sync-rewrite-commit-authors-to-org.yml](.github/workflows/sync-rewrite-commit-authors-to-org.yml) — **Actions → "Sync rewrite-commit-authors to org repos" → Run workflow.**
    - **Required secret:** `ORG_REPO_TOKEN` — a PAT (or fine-grained token) with **repo** scope for the org, so the workflow can push to other repos. Add it in **Settings → Secrets and variables → Actions** in this repo. Without it, the sync job fails with a clear error.
    - **How to create the token:**
      - **Classic PAT:** GitHub → **Settings** (your profile) → **Developer settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token**. Name it (e.g. `github-actions-org-sync`). Under scopes, check **repo** (full control of private repositories). Generate and copy the token once (it won’t be shown again). In the **github-actions** repo: **Settings → Secrets and variables → Actions** → **New repository secret** → Name: `ORG_REPO_TOKEN`, Value: paste the token.
@@ -228,7 +228,7 @@ Goal: every org repo can run "Rewrite commit authors" so anyone can scrub commit
      workflow_dispatch:
    jobs:
      call-rewrite:
-       uses: expectedbehaviors/github-actions/.github/workflows/rewrite-commit-authors/rewrite-commit-authors.yml@main
+       uses: expectedbehaviors/github-actions/.github/workflows/rewrite-commit-authors.yml@main
        secrets: inherit
    ```
 
