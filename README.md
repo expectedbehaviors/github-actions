@@ -166,6 +166,74 @@ Resolve the release tag (from event or input), find the merged PR for that relea
 
 ---
 
+### rewrite-commit-authors
+
+Rewrite every commit in the repository to use new author and committer name/email (e.g. to purge PII from history). Uses `git-filter-repo`; rewrites history and optionally force-pushes to the remote. **Destructive:** all commit hashes change; clones and open PRs will be invalid.
+
+**Caller job:** `checkout` with **`fetch-depth: 0`** (full history), `permissions: contents: write`. Pass `github_token`.
+
+**Inputs**
+
+| Input             | Required | Default | Description |
+|-------------------|----------|---------|-------------|
+| `github_token`   | Yes      | —       | GitHub token for re-adding remote and push (pass `secrets.GITHUB_TOKEN`). |
+| `author_name`    | Yes      | —       | New author name for every commit (e.g. `Expected Behaviors`). |
+| `author_email`   | Yes      | —       | New author email for every commit (e.g. `noreply@example.github.io`). |
+| `committer_name` | No       | (same as author) | New committer name. |
+| `committer_email`| No       | (same as author) | New committer email. |
+| `branch`         | No       | `main`  | Branch to rewrite and push. |
+| `push`           | No       | `true`  | If `true`, re-add origin and force-push after rewrite. |
+
+**Example (reusable workflow in another repo — no inputs; author = whoever runs it)**
+
+```yaml
+jobs:
+  call-rewrite:
+    uses: expectedbehaviors/github-actions/.github/workflows/rewrite-commit-authors/rewrite-commit-authors.yml@main
+    secrets: inherit
+```
+
+**Example (calling the composite action directly with explicit author)**
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- uses: owner/github-actions/.github/actions/rewrite-commit-authors@v1
+  with:
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    author_name: 'Expected Behaviors'
+    author_email: 'noreply@expectedbehaviors.github.io'
+```
+
+**Adding to all Expected Behaviors org repos (no PII in history)**
+
+Goal: every org repo can run "Rewrite commit authors" so anyone can scrub commit author/committer PII from history. Author is set to whoever runs the workflow (GitHub username + noreply email).
+
+1. **Roles:** The **reusable workflow** (`.github/workflows/rewrite-commit-authors/`) is the callee—other repos call it and it runs in their context. It does checkout, sets author from `github.actor`, then calls the **composite action** (`.github/actions/rewrite-commit-authors/`), which contains the actual rewrite logic. Each repo only needs a small caller workflow (snippet below) that triggers the reusable workflow.
+
+2. **Automated sync (recommended):** A workflow in this repo syncs the caller to all org repos. Run it manually or on a schedule.
+   - **Workflow:** [.github/workflows/sync-rewrite-commit-authors-to-org/](.github/workflows/sync-rewrite-commit-authors-to-org/) — **Actions → "Sync rewrite-commit-authors to org repos" → Run workflow.**
+   - **Required secret:** `ORG_REPO_TOKEN` — a PAT (or fine-grained token) with **repo** scope for the org, so the workflow can push to other repos. Add it in **Settings → Secrets and variables → Actions** in this repo. Without it, the sync job fails with a clear error.
+   - **How to create the token:**
+     - **Classic PAT:** GitHub → **Settings** (your profile) → **Developer settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token**. Name it (e.g. `github-actions-org-sync`). Under scopes, check **repo** (full control of private repositories). Generate and copy the token once (it won’t be shown again). In the **github-actions** repo: **Settings → Secrets and variables → Actions** → **New repository secret** → Name: `ORG_REPO_TOKEN`, Value: paste the token.
+     - **Fine-grained PAT (narrower):** **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**. Repository access: **Only select repositories** → choose the org repos you want the sync to touch, or **All repositories** for the org. Permissions: **Contents** = Read and write. Generate, copy, then add as `ORG_REPO_TOKEN` in the repo secrets.
+   - **Inputs:** `org` (default `expectedbehaviors`), `dry_run` (if true, only list repos and report; no push). On schedule (weekly Monday 02:00 UTC), the default org is used.
+   - After the first successful run, every org repo will have `.github/workflows/rewrite-commit-authors.yml` and can run "Rewrite commit authors (PII purge)" from the Actions tab.
+
+3. **Per-repo file (manual):** In a single org repo, add `.github/workflows/rewrite-commit-authors.yml` with:
+   ```yaml
+   name: Rewrite commit authors (PII purge)
+   on:
+     workflow_dispatch:
+   jobs:
+     call-rewrite:
+       uses: expectedbehaviors/github-actions/.github/workflows/rewrite-commit-authors/rewrite-commit-authors.yml@main
+       secrets: inherit
+   ```
+
+---
+
 ## Versioning
 
 Pin by tag (e.g. `@v1`) or SHA for stable builds. Use `@main` for latest; avoid in production.

@@ -1,0 +1,77 @@
+# Composite action: rewrite all commit author and committer name/email (e.g. PII purge).
+# Uses git-filter-repo. Rewrites history and optionally force-pushes to the remote.
+# Caller must checkout with fetch-depth: 0 (full history) and permissions: contents: write.
+# Pass github_token to re-add remote and push.
+
+name: 'Rewrite commit authors (PII purge)'
+description: 'Rewrite all commits to use new author/committer name and email, then optionally force-push'
+inputs:
+  github_token:
+    description: 'GitHub token for push (pass secrets.GITHUB_TOKEN)'
+    required: true
+  author_name:
+    description: 'New author name for every commit (e.g. Expected Behaviors)'
+    required: true
+  author_email:
+    description: 'New author email for every commit (e.g. noreply@example.github.io)'
+    required: true
+  committer_name:
+    description: 'New committer name (defaults to author_name if empty)'
+    required: false
+    default: ''
+  committer_email:
+    description: 'New committer email (defaults to author_email if empty)'
+    required: false
+    default: ''
+  branch:
+    description: 'Branch to rewrite and push (must exist)'
+    required: false
+    default: 'main'
+  push:
+    description: 'If true, re-add origin and force-push after rewrite'
+    required: false
+    default: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout branch
+      run: git checkout "${{ inputs.branch }}"
+      shell: bash
+
+    - name: Install git-filter-repo
+      run: |
+        python3 -m pip install --user git-filter-repo
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        echo "$HOME/.local/bin" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Rewrite commit authors and committers
+      env:
+        AUTHOR_NAME: ${{ inputs.author_name }}
+        AUTHOR_EMAIL: ${{ inputs.author_email }}
+        COMMITTER_NAME: ${{ inputs.committer_name }}
+        COMMITTER_EMAIL: ${{ inputs.committer_email }}
+      run: |
+        COMMITTER_NAME="${COMMITTER_NAME:-$AUTHOR_NAME}"
+        COMMITTER_EMAIL="${COMMITTER_EMAIL:-$AUTHOR_EMAIL}"
+        export COMMITTER_NAME COMMITTER_EMAIL
+        CALLBACK_SCRIPT=$(mktemp)
+        cat << 'PYTHON_SCRIPT' > "$CALLBACK_SCRIPT"
+        import os
+        commit.author_name = os.environ.get('AUTHOR_NAME', 'Unknown').encode('utf-8')
+        commit.author_email = os.environ.get('AUTHOR_EMAIL', '').encode('utf-8')
+        commit.committer_name = os.environ.get('COMMITTER_NAME', os.environ.get('AUTHOR_NAME', 'Unknown')).encode('utf-8')
+        commit.committer_email = os.environ.get('COMMITTER_EMAIL', os.environ.get('AUTHOR_EMAIL', '')).encode('utf-8')
+        PYTHON_SCRIPT
+        git filter-repo --commit-callback "exec(open('$CALLBACK_SCRIPT').read())" --force
+        rm -f "$CALLBACK_SCRIPT"
+      shell: bash
+
+    - name: Force-push rewritten history
+      if: inputs.push == 'true'
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+        git push origin "${{ inputs.branch }}" --force
+      shell: bash

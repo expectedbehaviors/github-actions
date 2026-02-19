@@ -1,0 +1,81 @@
+# Sync the rewrite-commit-authors caller workflow to all repos in the org.
+# Run manually (workflow_dispatch) or on a schedule. Ensures every org repo can run
+# "Rewrite commit authors" so committers can scrub PII from history.
+#
+# Requires: Add a PAT with repo scope (for the org) as ORG_REPO_TOKEN in this repo's secrets.
+# GITHUB_TOKEN only has access to this repo and cannot push to other org repos.
+name: Sync rewrite-commit-authors to org repos
+on:
+  workflow_dispatch:
+    inputs:
+      org:
+        description: 'GitHub org name'
+        required: true
+        type: string
+        default: 'expectedbehaviors'
+      dry_run:
+        description: 'If true, only list repos and report; do not push'
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    # Weekly on Monday 02:00 UTC
+    - cron: '0 2 * * 1'
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: List org repos
+        id: list
+        env:
+          GH_TOKEN: ${{ secrets.ORG_REPO_TOKEN }}
+          INPUT_ORG: ${{ github.event.inputs.org }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::ORG_REPO_TOKEN secret is required to push to other repos. Add a PAT with repo scope (Settings → Secrets → Actions)."
+            exit 1
+          fi
+          ORG="${INPUT_ORG:-expectedbehaviors}"
+          gh repo list "$ORG" --limit 500 --json nameWithOwner -q '.[].nameWithOwner' > repos.txt
+          echo "count=$(wc -l < repos.txt)" >> $GITHUB_OUTPUT
+          cat repos.txt
+      - name: Sync workflow to each repo
+        env:
+          GH_TOKEN: ${{ secrets.ORG_REPO_TOKEN }}
+          INPUT_ORG: ${{ github.event.inputs.org }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          ORG="${INPUT_ORG:-expectedbehaviors}"
+          DRY_RUN="${DRY_RUN:-false}"
+          DESIRED='name: Rewrite commit authors (PII purge)
+          on:
+            workflow_dispatch:
+          jobs:
+            call-rewrite:
+              uses: expectedbehaviors/github-actions/.github/workflows/rewrite-commit-authors/rewrite-commit-authors.yml@main
+              secrets: inherit
+          '
+          while read -r repo; do
+            [ -z "$repo" ] && continue
+            dir="/tmp/$(echo "$repo" | tr / -)"
+            echo "--- $repo ---"
+            git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${repo}.git" "$dir" 2>/dev/null || { echo "Clone failed, skip"; continue; }
+            mkdir -p "$dir/.github/workflows"
+            path="$dir/.github/workflows/rewrite-commit-authors.yml"
+            if [ -f "$path" ] && diff -q <(echo "$DESIRED") "$path" >/dev/null 2>&1; then
+              echo "Already up to date."
+            else
+              echo "$DESIRED" > "$path"
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "Would add/update (dry run)."
+              else
+                (cd "$dir" && git add .github/workflows/rewrite-commit-authors.yml && git diff --staged --quiet || (git commit -m "ci: add or update rewrite-commit-authors workflow (PII scrub)" && git push))
+              fi
+            fi
+            rm -rf "$dir"
+          done < repos.txt
+      - name: Summary
+        run: |
+          echo "Processed $(wc -l < repos.txt) repos. Add ORG_REPO_TOKEN (PAT with repo scope) if sync did not push."

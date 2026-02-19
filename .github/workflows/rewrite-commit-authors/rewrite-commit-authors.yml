@@ -1,0 +1,33 @@
+# Reusable workflow: rewrite commit authors (PII purge) in the calling repo.
+# Author/committer are set from whoever triggered the run (github.actor + noreply email).
+# Call from any org repo with workflow_dispatch.
+name: Rewrite commit authors (reusable)
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: 'Branch to rewrite and push'
+        required: false
+        type: string
+        default: 'main'
+      push:
+        description: 'Re-add origin and force-push after rewrite'
+        required: false
+        type: boolean
+        default: true
+jobs:
+  rewrite:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: expectedbehaviors/github-actions/.github/actions/rewrite-commit-authors@main
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          author_name: ${{ github.actor }}
+          author_email: ${{ format('{0}@users.noreply.github.com', github.actor) }}
+          branch: ${{ inputs.branch }}
+          push: ${{ inputs.push }}
