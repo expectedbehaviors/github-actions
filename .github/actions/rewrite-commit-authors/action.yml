@@ -34,6 +34,12 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Set git identity
+      run: |
+        git config user.email "${{ inputs.author_email }}"
+        git config user.name "${{ inputs.author_name }}"
+      shell: bash
+
     - name: Checkout branch
       run: git checkout "${{ inputs.branch }}"
       shell: bash
