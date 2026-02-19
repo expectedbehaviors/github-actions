@@ -71,15 +71,17 @@ runs:
 
     - name: Prepare chart for release (image tag = chart version)
       run: |
-        mkdir -p build
-        cp -r ${{ inputs.chart_path }} build/chart
-        cd build/chart
+        CHART_SRC="${{ inputs.chart_path }}"
+        BUILD_DIR="${RUNNER_TEMP}/helm-publish-build"
+        mkdir -p "$BUILD_DIR"
+        cp -r "$CHART_SRC" "$BUILD_DIR/chart"
+        cd "$BUILD_DIR/chart"
         KEY="${{ inputs.values_image_tag_key }}"
         FIRST="${KEY%%.*}"
         REST="${KEY#*.}"
         YQ_PATH=".\"${FIRST}\".${REST} = strenv(VERSION)"
         yq e "$YQ_PATH" -i values.yaml
-        cd ../..
+        echo "build_dir=$BUILD_DIR" >> $GITHUB_ENV
       env:
         VERSION: ${{ steps.version.outputs.version }}
       shell: bash
@@ -88,10 +90,12 @@ runs:
       id: package
       run: |
         helm repo add ${{ inputs.helm_repo_name }} ${{ inputs.helm_repo_url }}
-        helm dependency update build/chart
+        helm dependency update "$BUILD_DIR/chart"
         VERSION="${{ steps.version.outputs.version }}"
-        helm package build/chart --version "$VERSION" --app-version "$VERSION"
+        helm package "$BUILD_DIR/chart" --version "$VERSION" --app-version "$VERSION"
         echo "chart_tarball=${{ inputs.chart_name }}-${VERSION}.tgz" >> $GITHUB_OUTPUT
+      env:
+        BUILD_DIR: ${{ env.build_dir }}
       shell: bash
 
     - name: Upload chart to GitHub Release
