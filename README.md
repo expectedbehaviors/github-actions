@@ -145,7 +145,7 @@ Resolve the release tag (from event or input), find the merged PR for that relea
 | `openai_api_key` | Yes      | —              | OpenAI API key (pass `secrets.OPENAI_API_KEY`). |
 | `github_token`  | Yes      | —              | GitHub token for gh CLI (pass `secrets.GITHUB_TOKEN`). |
 | `release_tag`    | No       | —              | Override release tag (e.g. for workflow_dispatch). |
-| `openai_model`   | No       | `gpt-4o-mini`  | OpenAI model for summarization. |
+| `openai_model`   | No       | `gpt-4o`       | OpenAI model for summarization. |
 
 **Outputs**
 
