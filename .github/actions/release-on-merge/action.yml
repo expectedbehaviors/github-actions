@@ -1,10 +1,10 @@
 # Composite action: bump patch version, create tag and GitHub Release.
-# When no tags exist, starts at 0.1.0 so first release is 0.1.1.
+# When no tags exist, uses initial_version if set (e.g. 3.0.0), else 0.1.0 so first release is 0.1.1.
 # Caller must pass github_token (e.g. secrets.GITHUB_TOKEN). Checkout with fetch-depth: 0, permissions: contents: write.
-# Outputs: tag (e.g. v0.1.1)
+# Outputs: tag (e.g. v3.0.0 or v0.1.1)
 
 name: 'Release on merge to main'
-description: 'Bump patch version from latest tag (default 0.1.0 when none) and create GitHub Release'
+description: 'Bump patch version from latest tag (default 0.1.0 when none, or initial_version when set) and create GitHub Release'
 inputs:
   github_token:
     description: 'GitHub token for gh CLI (pass secrets.GITHUB_TOKEN)'
@@ -13,9 +13,13 @@ inputs:
     description: 'Prefix for version tags (e.g. v for v0.1.0)'
     required: false
     default: 'v'
+  initial_version:
+    description: 'When no tags exist, use this as the first release (e.g. 3.0.0 → v3.0.0). Omit to use 0.1.0 and bump to 0.1.1.'
+    required: false
+    default: ''
 outputs:
   tag:
-    description: 'The new version tag created (e.g. v0.1.1)'
+    description: 'The new version tag created (e.g. v3.0.0 or v0.1.1)'
     value: ${{ steps.version.outputs.tag }}
 runs:
   using: 'composite'
@@ -24,17 +28,26 @@ runs:
       id: version
       run: |
         TAG_PREFIX="${{ inputs.tag_prefix }}"
-        LATEST=$(git describe --tags --match "${TAG_PREFIX}*" --abbrev=0 2>/dev/null || echo "${TAG_PREFIX}0.1.0")
-        LATEST="${LATEST#$TAG_PREFIX}"
-        MAJOR="${LATEST%%.*}"
-        REST="${LATEST#*.}"
-        MINOR="${REST%%.*}"
-        PATCH="${REST#*.}"
-        [ -z "$MAJOR" ] && MAJOR=0
-        [ -z "$MINOR" ] && MINOR=0
-        [ -z "$PATCH" ] && PATCH=0
-        PATCH=$((PATCH + 1))
-        NEXT="${TAG_PREFIX}${MAJOR}.${MINOR}.${PATCH}"
+        INITIAL="${{ inputs.initial_version }}"
+        EXISTING=$(git describe --tags --match "${TAG_PREFIX}*" --abbrev=0 2>/dev/null || true)
+        if [ -z "$EXISTING" ]; then
+          if [ -n "$INITIAL" ]; then
+            NEXT="${TAG_PREFIX}${INITIAL}"
+          else
+            NEXT="${TAG_PREFIX}0.1.1"
+          fi
+        else
+          LATEST="${EXISTING#$TAG_PREFIX}"
+          MAJOR="${LATEST%%.*}"
+          REST="${LATEST#*.}"
+          MINOR="${REST%%.*}"
+          PATCH="${REST#*.}"
+          [ -z "$MAJOR" ] && MAJOR=0
+          [ -z "$MINOR" ] && MINOR=0
+          [ -z "$PATCH" ] && PATCH=0
+          PATCH=$((PATCH + 1))
+          NEXT="${TAG_PREFIX}${MAJOR}.${MINOR}.${PATCH}"
+        fi
         echo "tag=$NEXT" >> $GITHUB_OUTPUT
         echo "Next version: $NEXT"
       shell: bash
