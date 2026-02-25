@@ -1,25 +1,45 @@
-# Composite action: bump patch version, create tag and GitHub Release.
-# When no tags exist, uses initial_version if set (e.g. 3.0.0), else 0.1.0 so first release is 0.1.1.
-# Caller must pass github_token (e.g. secrets.GITHUB_TOKEN). Checkout with fetch-depth: 0, permissions: contents: write.
-# Outputs: tag (e.g. v3.0.0 or v0.1.1)
+# Composite action: create tag and GitHub Release. Version bump: patch (default), or auto from commit keywords/diff.
+# When no tags exist, uses initial_version if set (e.g. 1.0.0), else 1.0.0.
+# Caller must pass github_token. Checkout with fetch-depth: 0, permissions: contents: write.
+# Outputs: tag (e.g. v1.0.0 or v1.0.1)
 
 name: 'Release on merge to main'
-description: 'Bump patch version from latest tag (default 0.1.0 when none, or initial_version when set) and create GitHub Release'
+description: 'Bump version (patch by default, or auto from keywords/diff), create tag and GitHub Release'
 inputs:
   github_token:
     description: 'GitHub token for gh CLI (pass secrets.GITHUB_TOKEN)'
     required: true
   tag_prefix:
-    description: 'Prefix for version tags (e.g. v for v0.1.0)'
+    description: 'Prefix for version tags (e.g. v for v1.0.0)'
     required: false
     default: 'v'
   initial_version:
-    description: 'When no tags exist, use this as the first release (e.g. 3.0.0 → v3.0.0). Omit to use 0.1.0 and bump to 0.1.1.'
+    description: 'When no tags exist, use this as the first release (e.g. 1.0.0). Omit to use default 1.0.0.'
     required: false
     default: ''
+  version_bump:
+    description: 'How to bump: patch (default), minor, major, or auto (keywords + optional diff threshold).'
+    required: false
+    default: 'patch'
+  major_keywords:
+    description: 'Comma-separated substrings in commit messages (since last tag) that force a major bump. Used when version_bump=auto.'
+    required: false
+    default: 'BREAKING CHANGE,breaking:'
+  minor_keywords:
+    description: 'Comma-separated substrings that force a minor bump when version_bump=auto.'
+    required: false
+    default: 'feat:,minor:,feature:'
+  patch_keywords:
+    description: 'Comma-separated substrings that suggest patch (no effect if major/minor matched). Optional.'
+    required: false
+    default: 'fix:,patch:,chore:'
+  diff_minor_threshold:
+    description: 'When version_bump=auto and no keyword matched: if (insertions+deletions) >= this, bump minor; else patch. 0 = disabled (default).'
+    required: false
+    default: '0'
 outputs:
   tag:
-    description: 'The new version tag created (e.g. v3.0.0 or v0.1.1)'
+    description: 'The new version tag created (e.g. v1.0.0 or v1.0.1)'
     value: ${{ steps.version.outputs.tag }}
 runs:
   using: 'composite'
@@ -27,29 +47,81 @@ runs:
     - name: Get next version
       id: version
       run: |
+        set -e
         TAG_PREFIX="${{ inputs.tag_prefix }}"
         INITIAL="${{ inputs.initial_version }}"
+        BUMP="${{ inputs.version_bump }}"
+        MAJOR_KW="${{ inputs.major_keywords }}"
+        MINOR_KW="${{ inputs.minor_keywords }}"
+        DIFF_THRESHOLD="${{ inputs.diff_minor_threshold }}"
+
         EXISTING=$(git describe --tags --match "${TAG_PREFIX}*" --abbrev=0 2>/dev/null || true)
         if [ -z "$EXISTING" ]; then
           if [ -n "$INITIAL" ]; then
             NEXT="${TAG_PREFIX}${INITIAL}"
           else
-            NEXT="${TAG_PREFIX}0.1.1"
+            NEXT="${TAG_PREFIX}1.0.0"
           fi
-        else
-          LATEST="${EXISTING#$TAG_PREFIX}"
-          MAJOR="${LATEST%%.*}"
-          REST="${LATEST#*.}"
-          MINOR="${REST%%.*}"
-          PATCH="${REST#*.}"
-          [ -z "$MAJOR" ] && MAJOR=0
-          [ -z "$MINOR" ] && MINOR=0
-          [ -z "$PATCH" ] && PATCH=0
-          PATCH=$((PATCH + 1))
-          NEXT="${TAG_PREFIX}${MAJOR}.${MINOR}.${PATCH}"
+          echo "tag=$NEXT" >> $GITHUB_OUTPUT
+          echo "Next version: $NEXT (no previous tag)"
+          exit 0
         fi
+
+        LATEST="${EXISTING#$TAG_PREFIX}"
+        MAJOR="${LATEST%%.*}"
+        REST="${LATEST#*.}"
+        MINOR="${REST%%.*}"
+        PATCH="${REST#*.}"
+        [ -z "$MAJOR" ] && MAJOR=0
+        [ -z "$MINOR" ] && MINOR=0
+        [ -z "$PATCH" ] && PATCH=0
+
+        INCREMENT="patch"
+        if [ "$BUMP" = "major" ]; then
+          INCREMENT="major"
+        elif [ "$BUMP" = "minor" ]; then
+          INCREMENT="minor"
+        elif [ "$BUMP" = "auto" ]; then
+          COMMITS=$(git log "${EXISTING}..HEAD" --format=%B 2>/dev/null || true)
+          COMMITS_ONE_LINE=$(echo "$COMMITS" | tr '\n' ' ')
+          for kw in $(echo "$MAJOR_KW" | tr ',' ' '); do
+            [ -z "$kw" ] && continue
+            if echo "$COMMITS_ONE_LINE" | grep -qiF "$kw"; then
+              INCREMENT="major"
+              echo "Detected major keyword: $kw"
+              break
+            fi
+          done
+          if [ "$INCREMENT" = "patch" ]; then
+            for kw in $(echo "$MINOR_KW" | tr ',' ' '); do
+              [ -z "$kw" ] && continue
+              if echo "$COMMITS_ONE_LINE" | grep -qiF "$kw"; then
+                INCREMENT="minor"
+                echo "Detected minor keyword: $kw"
+                break
+              fi
+            done
+          fi
+          if [ "$INCREMENT" = "patch" ] && [ -n "$DIFF_THRESHOLD" ] && [ "$DIFF_THRESHOLD" -gt 0 ] 2>/dev/null; then
+            STAT=$(git diff --shortstat "${EXISTING}..HEAD" 2>/dev/null || true)
+            ADDED=$(echo "$STAT" | grep -oE '[0-9]+ insertion' | head -1 | grep -oE '[0-9]+' || echo 0)
+            DELETED=$(echo "$STAT" | grep -oE '[0-9]+ deletion' | head -1 | grep -oE '[0-9]+' || echo 0)
+            TOTAL=$((ADDED + DELETED))
+            if [ "$TOTAL" -ge "$DIFF_THRESHOLD" ]; then
+              INCREMENT="minor"
+              echo "Diff threshold met: ${TOTAL} changes >= ${DIFF_THRESHOLD}"
+            fi
+          fi
+        fi
+
+        case "$INCREMENT" in
+          major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+          minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+          *)    PATCH=$((PATCH + 1)) ;;
+        esac
+        NEXT="${TAG_PREFIX}${MAJOR}.${MINOR}.${PATCH}"
         echo "tag=$NEXT" >> $GITHUB_OUTPUT
-        echo "Next version: $NEXT"
+        echo "Next version: $NEXT (bump: $INCREMENT)"
       shell: bash
 
     - name: Create tag and release
