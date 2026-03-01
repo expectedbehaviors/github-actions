@@ -18,8 +18,8 @@ inputs:
     description: 'Chart name for tarball (e.g. organizr-tab-controller)'
     required: true
   values_image_tag_key:
-    description: 'yq path to set image tag in values (e.g. organizr-tab-controller.controllers.main.containers.main.image.tag)'
-    required: true
+    description: 'yq path to set image tag or version in values (e.g. image.tag or version). Set to the published chart version. Empty to skip (charts with no image).'
+    required: false
   helm_repo_name:
     description: 'Helm repo name for dependency update (e.g. bjw-s)'
     required: false
@@ -28,9 +28,19 @@ inputs:
     description: 'Helm repo URL for dependency update'
     required: false
     default: 'https://bjw-s-labs.github.io/helm-charts'
+  helm_repo_name_2:
+    description: 'Optional second repo name for dependency update (e.g. onepassworditem).'
+    required: false
+  helm_repo_url_2:
+    description: 'Optional second repo URL (e.g. https://expectedbehaviors.github.io/OnePasswordItem-helm).'
+    required: false
   release_tag:
     description: 'Release tag override (for workflow_dispatch); e.g. v0.1.0'
     required: false
+  tag_version_prefix:
+    description: 'Prefix to strip from tag to get version (e.g. external-services-v → 1.0.0). Default: v (tag v1.0.0 → 1.0.0).'
+    required: false
+    default: 'v'
   publish_to_pages:
     description: 'If true (default), enable GitHub Pages (gh-pages branch) when needed, then publish chart and index so Helm repo is at https://<owner>.github.io/<repo>. Set to false to skip.'
     required: false
@@ -60,7 +70,8 @@ runs:
         else
           TAG=$(gh api "repos/${{ github.repository }}/releases?per_page=1" | jq -r '.[0].tag_name')
         fi
-        VERSION="${TAG#v}"
+        PREFIX="${{ inputs.tag_version_prefix }}"
+        VERSION="${TAG#$PREFIX}"
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "tag=$TAG" >> $GITHUB_OUTPUT
         echo "Version: $VERSION"
@@ -75,7 +86,7 @@ runs:
       run: sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 && sudo chmod +x /usr/local/bin/yq
       shell: bash
 
-    - name: Prepare chart for release (image tag = chart version)
+    - name: Prepare chart for release (image tag or version = chart version)
       run: |
         CHART_SRC="${{ inputs.chart_path }}"
         BUILD_DIR="${RUNNER_TEMP}/helm-publish-build"
@@ -83,10 +94,18 @@ runs:
         cp -r "$CHART_SRC" "$BUILD_DIR/chart"
         cd "$BUILD_DIR/chart"
         KEY="${{ inputs.values_image_tag_key }}"
-        FIRST="${KEY%%.*}"
-        REST="${KEY#*.}"
-        YQ_PATH=".\"${FIRST}\".${REST} = strenv(VERSION)"
-        yq e "$YQ_PATH" -i values.yaml
+        if [ -z "$KEY" ]; then
+          echo "values_image_tag_key empty; skipping values update"
+        else
+          FIRST="${KEY%%.*}"
+          REST="${KEY#*.}"
+          if [ -z "$REST" ]; then
+            YQ_PATH=".\"${FIRST}\" = strenv(VERSION)"
+          else
+            YQ_PATH=".\"${FIRST}\".${REST} = strenv(VERSION)"
+          fi
+          yq e "$YQ_PATH" -i values.yaml
+        fi
         echo "build_dir=$BUILD_DIR" >> $GITHUB_ENV
       env:
         VERSION: ${{ steps.version.outputs.version }}
@@ -96,6 +115,9 @@ runs:
       id: package
       run: |
         helm repo add ${{ inputs.helm_repo_name }} ${{ inputs.helm_repo_url }}
+        if [ -n "${{ inputs.helm_repo_name_2 }}" ] && [ -n "${{ inputs.helm_repo_url_2 }}" ]; then
+          helm repo add ${{ inputs.helm_repo_name_2 }} ${{ inputs.helm_repo_url_2 }}
+        fi
         helm dependency update "$BUILD_DIR/chart"
         VERSION="${{ steps.version.outputs.version }}"
         helm package "$BUILD_DIR/chart" --version "$VERSION" --app-version "$VERSION"
