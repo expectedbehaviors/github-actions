@@ -1,0 +1,32 @@
+# Composite action: run terraform init -backend=false and terraform validate in the given directory.
+# Caller must checkout first. Use defaults.run.working-directory in the job or pass working_directory.
+
+name: 'Terraform validate'
+description: 'Run terraform init -backend=false and terraform validate in the given directory'
+inputs:
+  working_directory:
+    description: 'Path to Terraform root (e.g. terraform/argocd-config). Empty = repo root.'
+    required: false
+    default: ''
+  terraform_version:
+    description: 'Terraform version (latest GA when omitted)'
+    required: false
+    default: '1.14.6'
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform_version }}
+        terraform_wrapper: false
+
+    - name: Terraform init
+      run: terraform init -backend=false
+      shell: bash
+      working-directory: ${{ inputs.working_directory || '.' }}
+
+    - name: Terraform validate
+      run: terraform validate
+      shell: bash
+      working-directory: ${{ inputs.working_directory || '.' }}

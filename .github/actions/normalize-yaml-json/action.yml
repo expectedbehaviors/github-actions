@@ -1,0 +1,70 @@
+# Composite action: normalize YAML and JSON with Prettier (preserves comments where supported); optionally commit and push.
+# Caller must checkout with ref (e.g. github.head_ref for PRs) and grant contents: write.
+# Outputs: changed (true|false)
+
+name: 'Normalize YAML and JSON'
+description: 'Run Prettier on given globs to normalize YAML/JSON; optionally commit and push'
+inputs:
+  globs:
+    description: 'Space-separated globs for Prettier (e.g. "terraform/**/*.yaml charts/**/*.yml .github/**/*.yml")'
+    required: false
+    default: '**/*.yaml **/*.yml **/*.json'
+  commit_and_push:
+    description: 'If true, commit and push normalized files'
+    required: false
+    default: true
+  node_version:
+    description: 'Node version for setup-node'
+    required: false
+    default: '20'
+  commit_author_name:
+    description: 'Git author name for the commit. Empty = use GITHUB_ACTOR (user who triggered the run).'
+    required: false
+    default: ''
+  commit_author_email:
+    description: 'Git author email for the commit. Empty = use GITHUB_ACTOR_ID+GITHUB_ACTOR@users.noreply.github.com.'
+    required: false
+    default: ''
+outputs:
+  changed:
+    description: 'true if any files were changed'
+    value: ${{ steps.norm.outputs.changed }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node_version }}
+
+    - name: Install Prettier
+      run: npm install -g prettier
+      shell: bash
+
+    - name: Normalize YAML and JSON
+      id: norm
+      run: |
+        # Globs are space-separated; quote so Prettier gets each glob
+        for g in ${{ inputs.globs }}; do
+          prettier --write "$g" 2>/dev/null || true
+        done
+        if [ -n "$(git status -s)" ]; then
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+        fi
+      shell: bash
+
+    - name: Commit normalized files
+      if: inputs.commit_and_push == 'true' && steps.norm.outputs.changed == 'true'
+      run: |
+        COMMIT_NAME="${{ inputs.commit_author_name }}"
+        COMMIT_EMAIL="${{ inputs.commit_author_email }}"
+        [ -z "$COMMIT_NAME" ] && COMMIT_NAME="$GITHUB_ACTOR"
+        [ -z "$COMMIT_EMAIL" ] && COMMIT_EMAIL="${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
+        git config user.name "$COMMIT_NAME"
+        git config user.email "$COMMIT_EMAIL"
+        git add -A
+        git diff --staged --quiet || git commit -m "chore: normalize YAML and JSON (prettier)"
+        git push origin "${{ github.head_ref || github.ref_name }}"
+      shell: bash
