@@ -9,9 +9,9 @@ inputs:
     required: false
     default: ''
   terraform_version:
-    description: 'Terraform version (e.g. 1.5.0)'
+    description: 'Terraform version (latest GA when omitted)'
     required: false
-    default: '1.5.0'
+    default: '1.14.6'
 runs:
   using: 'composite'
   steps:

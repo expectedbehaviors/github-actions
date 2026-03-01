@@ -14,9 +14,17 @@ inputs:
     required: false
     default: true
   terraform_version:
-    description: 'Terraform version'
+    description: 'Terraform version (latest GA when omitted)'
     required: false
-    default: '1.5.0'
+    default: '1.14.6'
+  commit_bot_name:
+    description: 'Git author name for the commit (e.g. github-actions[bot])'
+    required: false
+    default: 'github-actions[bot]'
+  commit_bot_email:
+    description: 'Git author email for the commit'
+    required: false
+    default: '41898282+github-actions[bot]@users.noreply.github.com'
 outputs:
   changed:
     description: 'true if any .tf files were reformatted'
@@ -47,8 +55,8 @@ runs:
     - name: Commit format changes
       if: inputs.commit_and_push == 'true' && steps.fmt.outputs.changed == 'true'
       run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config user.name "${{ inputs.commit_bot_name }}"
+        git config user.email "${{ inputs.commit_bot_email }}"
         git add "${{ inputs.terraform_dir }}/"
         git diff --staged --quiet || git commit -m "chore: terraform fmt -recursive"
         git push origin "${{ github.head_ref || github.ref_name }}"

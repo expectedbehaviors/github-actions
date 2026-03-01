@@ -17,6 +17,14 @@ inputs:
     description: 'Node version for setup-node'
     required: false
     default: '20'
+  commit_bot_name:
+    description: 'Git author name for the commit (e.g. github-actions[bot])'
+    required: false
+    default: 'github-actions[bot]'
+  commit_bot_email:
+    description: 'Git author email for the commit'
+    required: false
+    default: '41898282+github-actions[bot]@users.noreply.github.com'
 outputs:
   changed:
     description: 'true if any files were changed'
@@ -50,8 +58,8 @@ runs:
     - name: Commit normalized files
       if: inputs.commit_and_push == 'true' && steps.norm.outputs.changed == 'true'
       run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config user.name "${{ inputs.commit_bot_name }}"
+        git config user.email "${{ inputs.commit_bot_email }}"
         git add -A
         git diff --staged --quiet || git commit -m "chore: normalize YAML and JSON (prettier)"
         git push origin "${{ github.head_ref || github.ref_name }}"
