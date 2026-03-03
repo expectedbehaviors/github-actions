@@ -1,0 +1,49 @@
+name: "Helm chart lint"
+description: "Install Helm, add repositories, update dependencies, and lint chart"
+
+inputs:
+  chart_path:
+    description: "Path to chart directory"
+    required: false
+    default: "."
+  helm_version:
+    description: "Helm version"
+    required: false
+    default: "v3.14.0"
+  helm_repositories:
+    description: "Newline-delimited name=url pairs for helm repo add"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Helm
+      uses: azure/setup-helm@v4
+      with:
+        version: ${{ inputs.helm_version }}
+
+    - name: Add Helm repos
+      shell: bash
+      run: |
+        set -euo pipefail
+        while IFS= read -r repo_line; do
+          repo_line="$(echo "$repo_line" | xargs)"
+          if [ -z "$repo_line" ]; then
+            continue
+          fi
+          repo_name="${repo_line%%=*}"
+          repo_url="${repo_line#*=}"
+          if [ -z "$repo_name" ] || [ -z "$repo_url" ] || [ "$repo_name" = "$repo_url" ]; then
+            echo "Invalid repo entry: '$repo_line' (expected name=url)"
+            exit 1
+          fi
+          helm repo add "$repo_name" "$repo_url"
+        done <<< "${{ inputs.helm_repositories }}"
+
+    - name: Update dependencies and lint chart
+      shell: bash
+      run: |
+        set -euo pipefail
+        helm dependency update "${{ inputs.chart_path }}"
+        helm lint "${{ inputs.chart_path }}"
