@@ -55,6 +55,10 @@ runs:
         MINOR_KW="${{ inputs.minor_keywords }}"
         DIFF_THRESHOLD="${{ inputs.diff_minor_threshold }}"
 
+        # Shallow checkouts can miss existing tags, which makes the action
+        # recalculate an already-published version and fail at release create.
+        git fetch --tags --force >/dev/null 2>&1 || true
+
         EXISTING=$(git describe --tags --match "${TAG_PREFIX}*" --abbrev=0 2>/dev/null || true)
         if [ -z "$EXISTING" ]; then
           if [ -n "$INITIAL" ]; then
@@ -120,6 +124,11 @@ runs:
           *)    PATCH=$((PATCH + 1)) ;;
         esac
         NEXT="${TAG_PREFIX}${MAJOR}.${MINOR}.${PATCH}"
+        while git rev-parse -q --verify "refs/tags/${NEXT}" >/dev/null; do
+          echo "Tag ${NEXT} already exists; bumping patch version"
+          PATCH=$((PATCH + 1))
+          NEXT="${TAG_PREFIX}${MAJOR}.${MINOR}.${PATCH}"
+        done
         echo "tag=$NEXT" >> $GITHUB_OUTPUT
         echo "Next version: $NEXT (bump: $INCREMENT)"
       shell: bash
@@ -129,6 +138,10 @@ runs:
         GH_TOKEN: ${{ inputs.github_token }}
       run: |
         TAG="${{ steps.version.outputs.tag }}"
+        if gh release view "$TAG" >/dev/null 2>&1; then
+          echo "Release $TAG already exists"
+          exit 0
+        fi
         gh release create "$TAG" \
           --title "$TAG" \
           --notes "Auto-release from main. Release notes will be updated shortly." \
