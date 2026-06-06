@@ -106,8 +106,6 @@ on:
         type: string
         default: ""
     secrets:
-      GITHUB_TOKEN:
-        required: true
       OPENAI_API_KEY:
         required: false
 
