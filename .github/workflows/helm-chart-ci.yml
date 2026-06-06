@@ -1,4 +1,5 @@
 # Reusable workflow: full Helm chart CI/CD pipeline for homelab charts.
+# Caller repos: one helm-chart-ci.yml per chart; no GITHUB_TOKEN in workflow_call.secrets.
 # Chains helm-chart-validate (lint → template), release-on-merge, helm-publish, release-notes.
 # Chart repos replace all local workflow files with one caller that uses workflow_call on this file.
 name: Helm chart CI (reusable)
