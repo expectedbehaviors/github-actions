@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/helm-chart-ci.yml'
+      - '.github/workflows/validate-helm-chart-ci.yml'
       - '.github/actions/helm-chart-validate/**'
       - '.github/actions/helm-lint/**'
       - '.github/actions/helm-template/**'
@@ -13,6 +14,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/helm-chart-ci.yml'
+      - '.github/workflows/validate-helm-chart-ci.yml'
       - '.github/actions/helm-chart-validate/**'
       - '.github/actions/helm-lint/**'
       - '.github/actions/helm-template/**'
@@ -22,9 +24,13 @@ jobs:
   validate-workflow-registration:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Workflow file present
         run: |
           test -f .github/workflows/helm-chart-ci.yml
           grep -q 'workflow_call' .github/workflows/helm-chart-ci.yml
-          ! grep -q 'GITHUB_TOKEN' .github/workflows/helm-chart-ci.yml || true
-          echo "helm-chart-ci.yml registered and parseable on main"
+          if grep -A3 'secrets:' .github/workflows/helm-chart-ci.yml | grep -q 'GITHUB_TOKEN'; then
+            echo "GITHUB_TOKEN must not appear under workflow_call.secrets"
+            exit 1
+          fi
+          echo "helm-chart-ci.yml registered and parseable"
