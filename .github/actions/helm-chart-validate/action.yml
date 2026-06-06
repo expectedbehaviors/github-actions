@@ -1,0 +1,42 @@
+name: "Helm chart validate"
+description: "Lint then template a Helm chart in order (standard pre-release validation)"
+
+inputs:
+  chart_path:
+    description: "Path to chart directory"
+    required: false
+    default: "."
+  helm_repositories:
+    description: "Newline-delimited name=url pairs for helm repo add"
+    required: false
+    default: ""
+  helm_version:
+    description: "Helm version"
+    required: false
+    default: "v3.14.0"
+  release_name:
+    description: "Release name passed to helm template"
+    required: false
+    default: "release"
+  values_files:
+    description: "Newline-delimited values file paths relative to chart_path"
+    required: false
+    default: "values.yaml"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Lint chart
+      uses: ./.github/actions/helm-lint
+      with:
+        chart_path: ${{ inputs.chart_path }}
+        helm_version: ${{ inputs.helm_version }}
+        helm_repositories: ${{ inputs.helm_repositories }}
+
+    - name: Render chart templates
+      uses: ./.github/actions/helm-template
+      with:
+        chart_path: ${{ inputs.chart_path }}
+        helm_version: ${{ inputs.helm_version }}
+        release_name: ${{ inputs.release_name }}
+        values_files: ${{ inputs.values_files }}

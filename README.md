@@ -90,6 +90,41 @@ Build a multi-platform image with Docker Buildx and push to Docker Hub. Uses GHA
 
 ---
 
+### helm-lint
+
+Install Helm, add dependency repositories, run `helm dependency update`, and `helm lint`. Use alone or via `helm-chart-validate`.
+
+**Inputs:** `chart_path` (default `.`), `helm_version` (default `v3.14.0`), `helm_repositories` (newline `name=url` pairs).
+
+---
+
+### helm-template
+
+Render chart manifests with `helm template` (proof that templates compile). Run after `helm-lint` in the same job or via `helm-chart-validate`.
+
+**Inputs:** `chart_path`, `release_name` (default `release`), `values_files` (newline paths, default `values.yaml`), `helm_version`.
+
+---
+
+### helm-chart-validate
+
+Orchestrates **helm-lint → helm-template** in order. Standard pre-release validation for homelab charts.
+
+**Inputs:** `chart_path`, `helm_repositories`, `helm_version`, `release_name`, `values_files`.
+
+**Example**
+
+```yaml
+- uses: actions/checkout@v4
+- uses: expectedbehaviors/github-actions/.github/actions/helm-chart-validate@main
+  with:
+    chart_path: .
+    helm_repositories: |
+      bjw-s=https://bjw-s-labs.github.io/helm-charts
+```
+
+---
+
 ### helm-publish
 
 Resolve version from the current GitHub Release (or latest), package the Helm chart with that version, set the image tag in `values.yaml` at a given path, and upload the tarball to the same release. By default also enables GitHub Pages (branch `gh-pages`) when needed and publishes the chart index there so the Helm repo is available at `https://<owner>.github.io/<repo>`.
@@ -231,6 +266,39 @@ Goal: every org repo can run "Rewrite commit authors" so anyone can scrub commit
        uses: expectedbehaviors/github-actions/.github/workflows/rewrite-commit-authors.yml@main
        secrets: inherit
    ```
+
+---
+
+## Reusable workflow (Helm charts)
+
+**One workflow** — `helm-chart-ci.yml` — chains validate (lint → template), `release-on-merge`, `helm-publish`, and `release-notes` with event-based job gates. Chart repos replace all local workflow files with a single caller. See [docs/helm-chart-ci.md](docs/helm-chart-ci.md).
+
+```yaml
+# .github/workflows/helm-chart-ci.yml in each chart repo
+name: Helm chart CI
+on:
+  push:
+    branches: [main]
+    paths: &chart_paths [Chart.yaml, values.yaml, templates/**, ...]
+  pull_request:
+    branches: [main]
+    paths: *chart_paths
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["Helm chart CI"]
+    types: [completed]
+    branches: [main]
+jobs:
+  ci:
+    uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-ci.yml@main
+    secrets: inherit
+    with:
+      chart_name: mealie
+      tag_prefix: mealie-v
+      helm_repositories: |
+        bjw-s=https://bjw-s-labs.github.io/helm-charts
+```
 
 ---
 
