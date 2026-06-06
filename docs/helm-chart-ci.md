@@ -22,7 +22,6 @@ GitHub Actions does **not** support YAML anchors/aliases (`&anchor` / `*alias`) 
 ```yaml
 paths:
   - 'Chart.yaml'
-  - 'Chart.lock'
   - 'values.yaml'
   - 'values/**'
   - 'README.md'
@@ -42,7 +41,6 @@ on:
     branches: [main]
     paths:
       - 'Chart.yaml'
-      - 'Chart.lock'
       - 'values.yaml'
       - 'values/**'
       - 'README.md'
@@ -52,7 +50,6 @@ on:
     branches: [main]
     paths:
       - 'Chart.yaml'
-      - 'Chart.lock'
       - 'values.yaml'
       - 'values/**'
       - 'README.md'
