@@ -10,7 +10,7 @@ Use **one file** in each chart repo that calls **`helm-chart-ci.yml`** in `expec
 |-------|-------------------|------|
 | Validate | `helm-chart-validate` → `helm-lint` → `helm-template` | `pull_request`, `push` |
 | Release | `release-on-merge` | `push` to `main` (after validate) |
-| Publish | `helm-publish` | `release: published`, `workflow_run` after push, `workflow_dispatch` |
+| Publish | `helm-publish` | `release: published`, `workflow_dispatch` (after caller creates a Release on push to `main`) |
 | Release notes | `release-notes` | same as publish (when enabled) |
 
 Terraform, Docker, and other non-Helm actions are **not** part of this workflow.
@@ -42,6 +42,7 @@ on:
     branches: [main]
     paths:
       - 'Chart.yaml'
+      - 'Chart.lock'
       - 'values.yaml'
       - 'values/**'
       - 'README.md'
@@ -51,6 +52,7 @@ on:
     branches: [main]
     paths:
       - 'Chart.yaml'
+      - 'Chart.lock'
       - 'values.yaml'
       - 'values/**'
       - 'README.md'
@@ -71,6 +73,9 @@ concurrency: helm-chart-mealie
 
 jobs:
   ci:
+    permissions:
+      contents: write
+      pull-requests: read
     uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-ci.yml@main
     secrets: inherit
     with:

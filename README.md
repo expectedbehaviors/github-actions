@@ -279,18 +279,34 @@ name: Helm chart CI
 on:
   push:
     branches: [main]
-    paths: [Chart.yaml, values.yaml, templates/**, ...]   # repeat under pull_request (no YAML anchors)
+    paths:
+      - 'Chart.yaml'
+      - 'values.yaml'
+      - 'values/**'
+      - 'README.md'
+      - '.helmignore'
+      - 'templates/**'
   pull_request:
     branches: [main]
-    paths: [Chart.yaml, values.yaml, templates/**, ...]
+    paths:
+      - 'Chart.yaml'
+      - 'values.yaml'
+      - 'values/**'
+      - 'README.md'
+      - '.helmignore'
+      - 'templates/**'
   release:
     types: [published]
-  workflow_run:
-    workflows: ["Helm chart CI"]
-    types: [completed]
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag override (e.g. mealie-v1.0.0)'
+        required: false
 jobs:
   ci:
+    permissions:
+      contents: write
+      pull-requests: read
     uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-ci.yml@main
     secrets: inherit
     with:
@@ -298,7 +314,12 @@ jobs:
       tag_prefix: mealie-v
       helm_repositories: |
         bjw-s=https://bjw-s-labs.github.io/helm-charts
+        onepassworditem=https://expectedbehaviors.github.io/OnePasswordItem-helm
+      publish_enabled: true
+      release_notes_enabled: true
 ```
+
+Do **not** add `workflow_run` that references this workflow's own `name:` — GitHub rejects self-listeners. Publish and release-notes run on `release: published` after the release job creates a GitHub Release.
 
 ---
 
