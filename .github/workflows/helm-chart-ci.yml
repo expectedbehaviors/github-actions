@@ -1,0 +1,216 @@
+# Reusable workflow: full Helm chart CI/CD pipeline for homelab charts.
+# Chains helm-chart-validate (lint → template), release-on-merge, helm-publish, release-notes.
+# Chart repos replace all local workflow files with one caller that uses workflow_call on this file.
+name: Helm chart CI (reusable)
+on:
+  workflow_call:
+    inputs:
+      chart_path:
+        description: "Path to chart directory"
+        required: false
+        type: string
+        default: "."
+      helm_repositories:
+        description: "Newline-delimited name=url pairs for helm repo add"
+        required: false
+        type: string
+        default: ""
+      helm_version:
+        description: "Helm version"
+        required: false
+        type: string
+        default: "v3.14.0"
+      release_name:
+        description: "Release name passed to helm template"
+        required: false
+        type: string
+        default: "release"
+      values_files:
+        description: "Newline-delimited values file paths relative to chart_path"
+        required: false
+        type: string
+        default: "values.yaml"
+      tag_prefix:
+        description: "Prefix for version tags (e.g. mealie-v or v)"
+        required: false
+        type: string
+        default: "v"
+      initial_version:
+        description: "First release version when no tags exist (e.g. 1.0.0)"
+        required: false
+        type: string
+        default: ""
+      version_bump:
+        description: "patch, minor, major, or auto"
+        required: false
+        type: string
+        default: "patch"
+      publish_enabled:
+        description: "Package chart and publish to GitHub Release / gh-pages"
+        required: false
+        type: boolean
+        default: true
+      chart_name:
+        description: "Chart name for tarball (required when publish_enabled)"
+        required: false
+        type: string
+        default: ""
+      values_image_tag_key:
+        description: "yq path to set image tag in values; empty to skip"
+        required: false
+        type: string
+        default: ""
+      helm_repo_name:
+        description: "Primary Helm repo name for helm-publish dependency update"
+        required: false
+        type: string
+        default: "bjw-s"
+      helm_repo_url:
+        description: "Primary Helm repo URL"
+        required: false
+        type: string
+        default: "https://bjw-s-labs.github.io/helm-charts"
+      helm_repo_name_2:
+        description: "Optional second Helm repo name"
+        required: false
+        type: string
+        default: ""
+      helm_repo_url_2:
+        description: "Optional second Helm repo URL"
+        required: false
+        type: string
+        default: ""
+      publish_to_pages:
+        description: "Publish chart index to gh-pages when publishing"
+        required: false
+        type: boolean
+        default: true
+      release_notes_enabled:
+        description: "Summarize merged PR into release notes via OpenAI"
+        required: false
+        type: boolean
+        default: true
+      release_tag:
+        description: "Override release tag (workflow_dispatch)"
+        required: false
+        type: string
+        default: ""
+      openai_model:
+        description: "OpenAI model for release notes"
+        required: false
+        type: string
+        default: "gpt-4o"
+      prompt_instruction:
+        description: "Extra instruction for release notes summarization"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+      OPENAI_API_KEY:
+        required: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint and render chart
+        uses: expectedbehaviors/github-actions/.github/actions/helm-chart-validate@main
+        with:
+          chart_path: ${{ inputs.chart_path }}
+          helm_repositories: ${{ inputs.helm_repositories }}
+          helm_version: ${{ inputs.helm_version }}
+          release_name: ${{ inputs.release_name }}
+          values_files: ${{ inputs.values_files }}
+
+  release:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Release on merge (create tag and release)
+        uses: expectedbehaviors/github-actions/.github/actions/release-on-merge@main
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag_prefix: ${{ inputs.tag_prefix }}
+          initial_version: ${{ inputs.initial_version }}
+          version_bump: ${{ inputs.version_bump }}
+
+  publish:
+    if: |
+      inputs.publish_enabled &&
+      (
+        (github.event_name == 'release' && (inputs.tag_prefix == '' || startsWith(github.event.release.tag_name, inputs.tag_prefix))) ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') ||
+        github.event_name == 'workflow_dispatch'
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Package and upload Helm chart
+        uses: expectedbehaviors/github-actions/.github/actions/helm-publish@main
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          chart_path: ${{ inputs.chart_path }}
+          chart_name: ${{ inputs.chart_name }}
+          values_image_tag_key: ${{ inputs.values_image_tag_key }}
+          helm_repo_name: ${{ inputs.helm_repo_name }}
+          helm_repo_url: ${{ inputs.helm_repo_url }}
+          helm_repo_name_2: ${{ inputs.helm_repo_name_2 }}
+          helm_repo_url_2: ${{ inputs.helm_repo_url_2 }}
+          tag_version_prefix: ${{ inputs.tag_prefix }}
+          publish_to_pages: ${{ inputs.publish_to_pages }}
+          release_tag: ${{ inputs.release_tag }}
+
+  release-notes:
+    if: |
+      inputs.release_notes_enabled &&
+      (
+        (github.event_name == 'release' && (inputs.tag_prefix == '' || startsWith(github.event.release.tag_name, inputs.tag_prefix))) ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') ||
+        github.event_name == 'workflow_dispatch'
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_PREFIX: ${{ inputs.tag_prefix }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.release_tag }}" ]; then
+            echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            TAG=$(gh api "repos/${{ github.repository }}/releases?per_page=20" -q '[.[] | select(.tag_name | startswith("'"$TAG_PREFIX"'")) | .tag_name][0]')
+            [ -z "$TAG" ] || [ "$TAG" = "null" ] && exit 1
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+      - name: Update release notes from PR (OpenAI)
+        uses: expectedbehaviors/github-actions/.github/actions/release-notes@main
+        with:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          release_tag: ${{ steps.tag.outputs.tag }}
+          openai_model: ${{ inputs.openai_model }}

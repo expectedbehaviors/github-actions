@@ -1,29 +1,24 @@
-# Helm chart CI — reusable workflows
+# Helm chart CI — one caller, one reusable workflow
 
-Homelab Helm charts share the same release pattern. Use these **reusable workflows** from `expectedbehaviors/github-actions` instead of duplicating inline `helm lint` steps.
+Homelab charts share the same pipeline. **Do not duplicate** `release-on-merge`, `helm-publish`, and `release-notes` across three workflow files.
 
-## Call order
+Use **one file** in each chart repo that calls **`helm-chart-ci.yml`** in `expectedbehaviors/github-actions`.
 
-| Stage | When | Reusable workflow |
-|-------|------|-------------------|
-| **Validate** | `pull_request` to `main` (chart paths) | `helm-chart-validate.yml` |
-| **Release** | `push` to `main` (chart paths) | `helm-chart-release-on-merge.yml` |
-| **Publish** | `release: published` or `workflow_run` after release | `helm-chart-publish.yml` |
-| **Release notes** | `release: published` or `workflow_run` after release | `helm-chart-release-notes.yml` |
+## Pipeline (inside reusable workflow)
 
-Composite building blocks (called in order by the workflows above):
+| Stage | Composite / action | When |
+|-------|-------------------|------|
+| Validate | `helm-chart-validate` → `helm-lint` → `helm-template` | `pull_request`, `push` |
+| Release | `release-on-merge` | `push` to `main` (after validate) |
+| Publish | `helm-publish` | `release: published`, `workflow_run` after push, `workflow_dispatch` |
+| Release notes | `release-notes` | same as publish (when enabled) |
 
-1. `helm-lint` — install Helm, add repos, `helm dependency update`, `helm lint`
-2. `helm-template` — `helm template` render proof
-3. `helm-chart-validate` — orchestrates **lint → template**
-4. `release-on-merge` — tag + GitHub Release
-5. `helm-publish` — package `.tgz`, sync `Chart.yaml`, `gh-pages` index
-6. `release-notes` — OpenAI summary from merged PR
+Terraform, Docker, and other non-Helm actions are **not** part of this workflow.
 
 ## Standard path filters
 
 ```yaml
-paths:
+paths: &chart_paths
   - 'Chart.yaml'
   - 'Chart.lock'
   - 'values.yaml'
@@ -33,19 +28,17 @@ paths:
   - 'templates/**'
 ```
 
-Do **not** include `.github/workflows/**` in path filters unless you intentionally want workflow edits to trigger releases (most charts exclude it).
+## Publishing chart (mealie example)
 
-## Release-only chart (no gh-pages publish)
-
-`release-on-merge.yml`:
+Replace `release-on-merge.yml`, `helm-publish.yml`, and `release-notes.yml` with **only** `.github/workflows/helm-chart-ci.yml`:
 
 ```yaml
-name: Release gaps chart on merge to main
+name: Helm chart CI
 
 on:
   push:
     branches: [main]
-    paths:
+    paths: &chart_paths
       - 'Chart.yaml'
       - 'values.yaml'
       - 'values/**'
@@ -54,79 +47,67 @@ on:
       - 'templates/**'
   pull_request:
     branches: [main]
-    paths:
-      - 'Chart.yaml'
-      - 'values.yaml'
-      - 'values/**'
-      - 'README.md'
-      - '.helmignore'
-      - 'templates/**'
-
-concurrency: release-gaps
-
-jobs:
-  validate:
-    if: github.event_name == 'pull_request'
-    uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-validate.yml@main
-    with:
-      chart_path: .
-      helm_repositories: |
-        bjw-s=https://bjw-s-labs.github.io/helm-charts
-        expectedbehaviors-op=https://expectedbehaviors.github.io/OnePasswordItem-helm
-
-  release:
-    if: github.event_name == 'push'
-    uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-release-on-merge.yml@main
-    secrets: inherit
-    with:
-      chart_path: .
-      helm_repositories: |
-        bjw-s=https://bjw-s-labs.github.io/helm-charts
-        expectedbehaviors-op=https://expectedbehaviors.github.io/OnePasswordItem-helm
-      tag_prefix: gaps-v
-```
-
-`release-notes.yml` (separate file, triggered by release):
-
-```yaml
-name: Release notes gaps
-
-on:
+    paths: *chart_paths
   release:
     types: [published]
   workflow_run:
-    workflows: ["Release gaps chart on merge to main"]
+    workflows: ["Helm chart CI"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
+      baseline_version:
+        description: 'First release version when no tags exist (e.g. 1.0.0)'
+        required: false
       release_tag:
-        description: 'Release tag (e.g. gaps-v1.0.0). Default: latest.'
+        description: 'Release tag override for publish/notes (e.g. mealie-v1.0.0)'
         required: false
 
+concurrency: helm-chart-mealie
+
 jobs:
-  release-notes:
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
-    uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-release-notes.yml@main
+  ci:
+    uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-ci.yml@main
     secrets: inherit
     with:
-      release_tag: ${{ github.event.inputs.release_tag }}
+      chart_path: .
+      chart_name: mealie
+      tag_prefix: mealie-v
+      helm_repositories: |
+        bjw-s=https://bjw-s-labs.github.io/helm-charts
+        onepassworditem=https://expectedbehaviors.github.io/OnePasswordItem-helm
+      helm_repo_name: bjw-s
+      helm_repo_url: https://bjw-s-labs.github.io/helm-charts
+      helm_repo_name_2: onepassworditem
+      helm_repo_url_2: https://expectedbehaviors.github.io/OnePasswordItem-helm
+      publish_enabled: true
+      release_notes_enabled: true
+      initial_version: ${{ github.event.inputs.baseline_version || '' }}
+      release_tag: ${{ github.event.inputs.release_tag || '' }}
 ```
 
-## Publishing chart (gh-pages + tarball)
+Delete the old three workflow files after adding this one.
 
-Add `helm-publish.yml` calling `helm-chart-publish.yml` with `chart_name`, `tag_version_prefix`, and optional `values_image_tag_key`.
+## Release-only chart (no gh-pages publish)
 
-The `workflow_run.workflows` name must match the `name:` field of your release-on-merge workflow exactly.
-
-## Charts with `deploy/helm` path
-
-Set `chart_path: deploy/helm` (or `deploy/helm/radarr` for core submodules) in all `with:` blocks.
-
-## `workflow_dispatch` baseline version
-
-Pass through `initial_version` on the release reusable workflow:
+Set `publish_enabled: false`. Release and release notes still run when configured.
 
 ```yaml
-initial_version: ${{ github.event.inputs.baseline_version || '' }}
+with:
+  tag_prefix: gaps-v
+  publish_enabled: false
+  release_notes_enabled: true
+  helm_repositories: |
+    bjw-s=https://bjw-s-labs.github.io/helm-charts
 ```
+
+## Charts under `deploy/helm`
+
+Set `chart_path: deploy/helm` in `with:`.
+
+## Required secrets
+
+| Secret | When |
+|--------|------|
+| `GITHUB_TOKEN` | Always (automatic) |
+| `OPENAI_API_KEY` | When `release_notes_enabled: true` |

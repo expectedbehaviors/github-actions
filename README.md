@@ -269,36 +269,33 @@ Goal: every org repo can run "Rewrite commit authors" so anyone can scrub commit
 
 ---
 
-## Reusable workflows (Helm charts)
+## Reusable workflow (Helm charts)
 
-Callable workflows that chain the composites above in the correct order. See [docs/helm-chart-ci.md](docs/helm-chart-ci.md) for full caller templates.
-
-| Workflow | Purpose |
-|----------|---------|
-| `helm-chart-validate.yml` | PR validation: lint → template |
-| `helm-chart-release-on-merge.yml` | Push to main: validate → release-on-merge |
-| `helm-chart-publish.yml` | Package chart from release tag, upload tarball, gh-pages |
-| `helm-chart-release-notes.yml` | OpenAI release notes from merged PR |
-
-**Example (release-only chart)**
+**One workflow** — `helm-chart-ci.yml` — chains validate (lint → template), `release-on-merge`, `helm-publish`, and `release-notes` with event-based job gates. Chart repos replace all local workflow files with a single caller. See [docs/helm-chart-ci.md](docs/helm-chart-ci.md).
 
 ```yaml
-jobs:
-  validate:
-    if: github.event_name == 'pull_request'
-    uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-validate.yml@main
-    with:
-      chart_path: .
-      helm_repositories: |
-        bjw-s=https://bjw-s-labs.github.io/helm-charts
-
+# .github/workflows/helm-chart-ci.yml in each chart repo
+name: Helm chart CI
+on:
+  push:
+    branches: [main]
+    paths: &chart_paths [Chart.yaml, values.yaml, templates/**, ...]
+  pull_request:
+    branches: [main]
+    paths: *chart_paths
   release:
-    if: github.event_name == 'push'
-    uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-release-on-merge.yml@main
+    types: [published]
+  workflow_run:
+    workflows: ["Helm chart CI"]
+    types: [completed]
+    branches: [main]
+jobs:
+  ci:
+    uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-ci.yml@main
     secrets: inherit
     with:
-      chart_path: .
-      tag_prefix: gaps-v
+      chart_name: mealie
+      tag_prefix: mealie-v
       helm_repositories: |
         bjw-s=https://bjw-s-labs.github.io/helm-charts
 ```
