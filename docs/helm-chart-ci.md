@@ -58,10 +58,6 @@ on:
       - 'templates/**'
   release:
     types: [published]
-  workflow_run:
-    workflows: ["Helm chart CI"]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       baseline_version:
@@ -96,6 +92,8 @@ jobs:
 
 Delete the old three workflow files after adding this one.
 
+**Do not** add `workflow_run` that references this workflow's own `name:` — GitHub rejects it ("cannot listen to itself"). Publish and release-notes run on `release: published` after the release job creates a GitHub Release.
+
 ## Release-only chart (no gh-pages publish)
 
 Set `publish_enabled: false`. Release and release notes still run when configured.
@@ -125,6 +123,11 @@ Caller example:
 ```yaml
 jobs:
   ci:
+    permissions:
+      contents: write
+      pull-requests: read
     uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-ci.yml@main
     secrets: inherit   # passes OPENAI_API_KEY; GITHUB_TOKEN is automatic
 ```
+
+Caller `permissions` must meet or exceed what the reusable workflow jobs need, or GitHub fails with `startup_failure` before any job runs.
