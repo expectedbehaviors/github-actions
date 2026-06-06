@@ -27,14 +27,14 @@ runs:
   using: "composite"
   steps:
     - name: Lint chart
-      uses: ./.github/actions/helm-lint
+      uses: expectedbehaviors/github-actions/.github/actions/helm-lint@main
       with:
         chart_path: ${{ inputs.chart_path }}
         helm_version: ${{ inputs.helm_version }}
         helm_repositories: ${{ inputs.helm_repositories }}
 
     - name: Render chart templates
-      uses: ./.github/actions/helm-template
+      uses: expectedbehaviors/github-actions/.github/actions/helm-template@main
       with:
         chart_path: ${{ inputs.chart_path }}
         helm_version: ${{ inputs.helm_version }}

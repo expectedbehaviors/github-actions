@@ -17,8 +17,10 @@ Terraform, Docker, and other non-Helm actions are **not** part of this workflow.
 
 ## Standard path filters
 
+GitHub Actions does **not** support YAML anchors/aliases (`&anchor` / `*alias`) in workflow files — a workflow using them fails to parse with "Anchors are not currently supported." Repeat the `paths` list under both `push` and `pull_request`:
+
 ```yaml
-paths: &chart_paths
+paths:
   - 'Chart.yaml'
   - 'Chart.lock'
   - 'values.yaml'
@@ -38,7 +40,7 @@ name: Helm chart CI
 on:
   push:
     branches: [main]
-    paths: &chart_paths
+    paths:
       - 'Chart.yaml'
       - 'values.yaml'
       - 'values/**'
@@ -47,7 +49,13 @@ on:
       - 'templates/**'
   pull_request:
     branches: [main]
-    paths: *chart_paths
+    paths:
+      - 'Chart.yaml'
+      - 'values.yaml'
+      - 'values/**'
+      - 'README.md'
+      - '.helmignore'
+      - 'templates/**'
   release:
     types: [published]
   workflow_run:
@@ -109,5 +117,14 @@ Set `chart_path: deploy/helm` in `with:`.
 
 | Secret | When |
 |--------|------|
-| `GITHUB_TOKEN` | Always (automatic) |
-| `OPENAI_API_KEY` | When `release_notes_enabled: true` |
+| `GITHUB_TOKEN` | Always (automatic in reusable workflows — **do not** declare in `workflow_call.secrets`) |
+| `OPENAI_API_KEY` | When `release_notes_enabled: true` (declare in `workflow_call.secrets`; pass via `secrets: inherit` or explicit mapping) |
+
+Caller example:
+
+```yaml
+jobs:
+  ci:
+    uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-ci.yml@main
+    secrets: inherit   # passes OPENAI_API_KEY; GITHUB_TOKEN is automatic
+```

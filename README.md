@@ -279,10 +279,10 @@ name: Helm chart CI
 on:
   push:
     branches: [main]
-    paths: &chart_paths [Chart.yaml, values.yaml, templates/**, ...]
+    paths: [Chart.yaml, values.yaml, templates/**, ...]   # repeat under pull_request (no YAML anchors)
   pull_request:
     branches: [main]
-    paths: *chart_paths
+    paths: [Chart.yaml, values.yaml, templates/**, ...]
   release:
     types: [published]
   workflow_run:
