@@ -17,8 +17,10 @@ Terraform, Docker, and other non-Helm actions are **not** part of this workflow.
 
 ## Standard path filters
 
+GitHub Actions does **not** support YAML anchors/aliases (`&anchor` / `*alias`) in workflow files — a workflow using them fails to parse with "Anchors are not currently supported." Repeat the `paths` list under both `push` and `pull_request`:
+
 ```yaml
-paths: &chart_paths
+paths:
   - 'Chart.yaml'
   - 'Chart.lock'
   - 'values.yaml'
@@ -38,7 +40,7 @@ name: Helm chart CI
 on:
   push:
     branches: [main]
-    paths: &chart_paths
+    paths:
       - 'Chart.yaml'
       - 'values.yaml'
       - 'values/**'
@@ -47,7 +49,13 @@ on:
       - 'templates/**'
   pull_request:
     branches: [main]
-    paths: *chart_paths
+    paths:
+      - 'Chart.yaml'
+      - 'values.yaml'
+      - 'values/**'
+      - 'README.md'
+      - '.helmignore'
+      - 'templates/**'
   release:
     types: [published]
   workflow_run:
