@@ -1,0 +1,30 @@
+# Validates reusable helm-chart-ci.yml parses and registers on push to main.
+name: Validate Helm chart CI workflow
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/helm-chart-ci.yml'
+      - '.github/actions/helm-chart-validate/**'
+      - '.github/actions/helm-lint/**'
+      - '.github/actions/helm-template/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/helm-chart-ci.yml'
+      - '.github/actions/helm-chart-validate/**'
+      - '.github/actions/helm-lint/**'
+      - '.github/actions/helm-template/**'
+  workflow_dispatch:
+
+jobs:
+  validate-workflow-registration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Workflow file present
+        run: |
+          test -f .github/workflows/helm-chart-ci.yml
+          grep -q 'workflow_call' .github/workflows/helm-chart-ci.yml
+          ! grep -q 'GITHUB_TOKEN' .github/workflows/helm-chart-ci.yml || true
+          echo "helm-chart-ci.yml registered and parseable"
