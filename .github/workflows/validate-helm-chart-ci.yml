@@ -27,4 +27,4 @@ jobs:
           test -f .github/workflows/helm-chart-ci.yml
           grep -q 'workflow_call' .github/workflows/helm-chart-ci.yml
           ! grep -q 'GITHUB_TOKEN' .github/workflows/helm-chart-ci.yml || true
-          echo "helm-chart-ci.yml registered and parseable"
+          echo "helm-chart-ci.yml registered and parseable on main"
