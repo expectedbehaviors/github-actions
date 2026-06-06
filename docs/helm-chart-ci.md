@@ -123,6 +123,11 @@ Caller example:
 ```yaml
 jobs:
   ci:
+    permissions:
+      contents: write
+      pull-requests: read
     uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-ci.yml@main
     secrets: inherit   # passes OPENAI_API_KEY; GITHUB_TOKEN is automatic
 ```
+
+Caller `permissions` must meet or exceed what the reusable workflow jobs need, or GitHub fails with `startup_failure` before any job runs.
