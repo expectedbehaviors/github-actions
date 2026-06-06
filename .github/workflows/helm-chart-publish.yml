@@ -1,0 +1,81 @@
+# Reusable workflow: package Helm chart from release tag and publish to GitHub Release / gh-pages.
+name: Helm chart publish (reusable)
+on:
+  workflow_call:
+    inputs:
+      chart_path:
+        description: "Path to chart directory"
+        required: false
+        type: string
+        default: "."
+      chart_name:
+        description: "Chart name for tarball (e.g. radarr)"
+        required: true
+        type: string
+      values_image_tag_key:
+        description: "yq path to set image tag in values; empty to skip"
+        required: false
+        type: string
+        default: ""
+      helm_repo_name:
+        description: "Primary Helm repo name for dependency update"
+        required: false
+        type: string
+        default: "bjw-s"
+      helm_repo_url:
+        description: "Primary Helm repo URL"
+        required: false
+        type: string
+        default: "https://bjw-s-labs.github.io/helm-charts"
+      helm_repo_name_2:
+        description: "Optional second Helm repo name"
+        required: false
+        type: string
+        default: ""
+      helm_repo_url_2:
+        description: "Optional second Helm repo URL"
+        required: false
+        type: string
+        default: ""
+      tag_version_prefix:
+        description: "Prefix stripped from tag to get chart version (e.g. radarr-v)"
+        required: false
+        type: string
+        default: "v"
+      publish_to_pages:
+        description: "Publish chart index to gh-pages"
+        required: false
+        type: boolean
+        default: true
+      release_tag:
+        description: "Override release tag (workflow_dispatch)"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Package and upload Helm chart
+        uses: expectedbehaviors/github-actions/.github/actions/helm-publish@main
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          chart_path: ${{ inputs.chart_path }}
+          chart_name: ${{ inputs.chart_name }}
+          values_image_tag_key: ${{ inputs.values_image_tag_key }}
+          helm_repo_name: ${{ inputs.helm_repo_name }}
+          helm_repo_url: ${{ inputs.helm_repo_url }}
+          helm_repo_name_2: ${{ inputs.helm_repo_name_2 }}
+          helm_repo_url_2: ${{ inputs.helm_repo_url_2 }}
+          tag_version_prefix: ${{ inputs.tag_version_prefix }}
+          publish_to_pages: ${{ inputs.publish_to_pages }}
+          release_tag: ${{ inputs.release_tag }}
