@@ -117,5 +117,14 @@ Set `chart_path: deploy/helm` in `with:`.
 
 | Secret | When |
 |--------|------|
-| `GITHUB_TOKEN` | Always (automatic) |
-| `OPENAI_API_KEY` | When `release_notes_enabled: true` |
+| `GITHUB_TOKEN` | Always (automatic in reusable workflows — **do not** declare in `workflow_call.secrets`) |
+| `OPENAI_API_KEY` | When `release_notes_enabled: true` (declare in `workflow_call.secrets`; pass via `secrets: inherit` or explicit mapping) |
+
+Caller example:
+
+```yaml
+jobs:
+  ci:
+    uses: expectedbehaviors/github-actions/.github/workflows/helm-chart-ci.yml@main
+    secrets: inherit   # passes OPENAI_API_KEY; GITHUB_TOKEN is automatic
+```
