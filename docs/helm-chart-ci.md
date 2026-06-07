@@ -151,10 +151,8 @@ The `release-notes` action writes **user-facing** notes for chart operators:
 
 Pass `chart_name` and `tag_prefix` via the reusable workflow (already wired from callers). Optional per-chart `prompt_instruction` for extra guidance.
 
-Regenerate notes for an existing release:
+Regenerate notes for an existing release via **Actions → Helm chart CI → Run workflow** on the chart repo, or:
 
 ```bash
-gh workflow run helm-chart-ci.yml --repo expectedbehaviors/mealie --ref main -f release_tag=mealie-v1.0.1
+gh workflow run helm-chart-ci.yml --repo expectedbehaviors/<chart> --ref main -f release_tag=<chart>-vX.Y.Z
 ```
-
-Or bulk: `./scripts/regenerate-release-notes.sh` in this repo.
