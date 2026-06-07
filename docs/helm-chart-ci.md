@@ -117,6 +117,10 @@ Set `chart_path: deploy/helm` in `with:`.
 
 After uploading the release tarball, `helm-publish` tries to commit `Chart.yaml` with the released `version` / `appVersion` and push to the default branch. On repos with branch protection (PR required), that push is **best-effort**: publish still succeeds and emits a workflow warning. Bump `Chart.yaml` in a follow-up PR if git drifts from the release tag.
 
+## First release (`workflow_dispatch`)
+
+Charts with no GitHub Release yet must bootstrap via **Actions → Helm chart CI → Run workflow** with `baseline_version` (e.g. `1.0.0`). That runs `release-on-merge` first (creates tag + Release), then publish and release-notes. Republish an existing tag with `release_tag` only (omit `baseline_version`).
+
 ## Required secrets
 
 | Secret | When |
