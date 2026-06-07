@@ -141,3 +141,20 @@ jobs:
 ```
 
 Caller `permissions` must meet or exceed what the reusable workflow jobs need, or GitHub fails with `startup_failure` before any job runs.
+
+## Release notes format
+
+The `release-notes` action writes **user-facing** notes for chart operators:
+
+- **What's changed** — summarized from the merged PR and commits (not raw PR review templates)
+- **Install and upgrade** — `helm repo add`, `helm upgrade --install` with version and README link
+
+Pass `chart_name` and `tag_prefix` via the reusable workflow (already wired from callers). Optional per-chart `prompt_instruction` for extra guidance.
+
+Regenerate notes for an existing release:
+
+```bash
+gh workflow run helm-chart-ci.yml --repo expectedbehaviors/mealie --ref main -f release_tag=mealie-v1.0.1
+```
+
+Or bulk: `./scripts/regenerate-release-notes.sh` in this repo.

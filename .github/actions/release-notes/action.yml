@@ -1,10 +1,9 @@
-# Composite action: get merged PR body for release tag, summarize via OpenAI, update GitHub Release notes.
-# Caller must pass openai_api_key and github_token (e.g. from secrets.OPENAI_API_KEY / secrets.GITHUB_TOKEN).
-# On release use event tag; on workflow_dispatch use release_tag input; else latest release.
+# Composite action: build user-facing Helm chart release notes from merged PR / commits, update GitHub Release.
+# Caller must pass openai_api_key and github_token. Checkout with fetch-depth: 0 before calling this action.
 # Outputs: tag, summary
 
 name: 'Release notes from PR'
-description: 'Summarize merged PR as release notes via OpenAI and update GitHub Release body'
+description: 'Write user-facing Helm chart release notes and update the GitHub Release body'
 inputs:
   openai_api_key:
     description: 'OpenAI API key (pass secrets.OPENAI_API_KEY)'
@@ -13,8 +12,24 @@ inputs:
     description: 'GitHub token for gh CLI (pass secrets.GITHUB_TOKEN)'
     required: true
   release_tag:
-    description: 'Release tag override (for workflow_dispatch); e.g. v0.1.0'
+    description: 'Release tag override (for workflow_dispatch); e.g. mealie-v1.0.0'
     required: false
+  chart_name:
+    description: 'Chart name for helm install line (Chart.yaml name field)'
+    required: false
+    default: ''
+  chart_path:
+    description: 'Path to chart directory for Chart.yaml description'
+    required: false
+    default: '.'
+  tag_prefix:
+    description: 'Prefix stripped from tag to get semver version (e.g. mealie-v)'
+    required: false
+    default: 'v'
+  prompt_instruction:
+    description: 'Optional extra instruction appended to the summarization prompt'
+    required: false
+    default: ''
   openai_model:
     description: 'OpenAI model for summarization'
     required: false
@@ -24,64 +39,192 @@ outputs:
     description: 'Release tag updated'
     value: ${{ steps.tag.outputs.tag }}
   summary:
-    description: 'The summarized release notes text'
-    value: ${{ steps.summarize.outputs.summary }}
+    description: 'The full release notes markdown'
+    value: ${{ steps.assemble.outputs.summary }}
 runs:
   using: 'composite'
   steps:
-    - name: Get release tag
+    - name: Get release tag and version
       id: tag
       env:
         GH_TOKEN: ${{ inputs.github_token }}
       run: |
+        set -euo pipefail
         if [ "${{ github.event_name }}" = "release" ]; then
-          echo "tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          TAG="${{ github.event.release.tag_name }}"
         elif [ -n "${{ inputs.release_tag }}" ]; then
-          echo "tag=${{ inputs.release_tag }}" >> $GITHUB_OUTPUT
+          TAG="${{ inputs.release_tag }}"
         else
           TAG=$(gh api "repos/${{ github.repository }}/releases?per_page=1" | jq -r '.[0].tag_name')
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
         fi
+        PREFIX="${{ inputs.tag_prefix }}"
+        VERSION="${TAG#${PREFIX}}"
+        REPO="${GITHUB_REPOSITORY#*/}"
+        CHART="${{ inputs.chart_name }}"
+        [ -z "$CHART" ] && CHART="$REPO"
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "repo=$REPO" >> "$GITHUB_OUTPUT"
+        echo "chart=$CHART" >> "$GITHUB_OUTPUT"
       shell: bash
 
-    - name: Find PR merged for this release
-      id: pr
+    - name: Collect change context
+      id: context
       env:
         GH_TOKEN: ${{ inputs.github_token }}
       run: |
+        set -euo pipefail
         TAG="${{ steps.tag.outputs.tag }}"
-        COMMIT_SHA=$(gh api "repos/${{ github.repository }}/git/ref/tags/${TAG}" | jq -r '.object.sha')
-        PR_BODY=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" | jq -r '.[0].body // empty' 2>/dev/null || true)
-        [ -z "$PR_BODY" ] && PR_BODY="Release $TAG"
-        echo "body<<EOF" >> $GITHUB_OUTPUT
-        echo "$PR_BODY" >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
+        PREFIX="${{ inputs.tag_prefix }}"
+        CHART_PATH="${{ inputs.chart_path }}"
+        CHART_YAML="${GITHUB_WORKSPACE}/${CHART_PATH}/Chart.yaml"
+        CHART_DESC=""
+        if [ -f "$CHART_YAML" ]; then
+          CHART_DESC=$(awk '/^description:/ { sub(/^description:[ \t]*/,""); gsub(/^["'\'']|["'\'']$/,""); print; exit }' "$CHART_YAML")
+        fi
+
+        COMMIT_SHA=$(gh api "repos/${{ github.repository }}/git/ref/tags/${TAG}" | jq -r '.object.sha // .object.url // empty' 2>/dev/null || true)
+        if [[ "$COMMIT_SHA" == http* ]]; then
+          COMMIT_SHA=$(gh api "$COMMIT_SHA" | jq -r '.object.sha')
+        fi
+
+        PR_TITLE=""
+        PR_BODY=""
+        if [ -n "$COMMIT_SHA" ]; then
+          PR_JSON=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" -H "Accept: application/vnd.github+json" 2>/dev/null || echo '[]')
+          PR_TITLE=$(echo "$PR_JSON" | jq -r '.[0].title // empty')
+          PR_BODY=$(echo "$PR_JSON" | jq -r '.[0].body // empty')
+        fi
+
+        git fetch --tags --force >/dev/null 2>&1 || true
+        PREV_TAG=$(git tag -l "${PREFIX}*" --sort=-version:refname | grep -v "^${TAG}$" | head -1 || true)
+        if [ -n "$PREV_TAG" ] && git rev-parse -q --verify "refs/tags/${PREV_TAG}" >/dev/null; then
+          COMMIT_LINES=$(git log "${PREV_TAG}..${TAG}" --format='- %s' 2>/dev/null || true)
+        else
+          COMMIT_LINES=$(git log -n 8 --format='- %s' 2>/dev/null || true)
+        fi
+        [ -z "$COMMIT_LINES" ] && COMMIT_LINES="- Release ${TAG}"
+
+        {
+          echo "chart_description<<EOF"
+          echo "${CHART_DESC:-Helm chart release.}"
+          echo "EOF"
+          echo "pr_title<<EOF"
+          echo "${PR_TITLE:-}"
+          echo "EOF"
+          echo "pr_body<<EOF"
+          if [ -n "$PR_BODY" ]; then
+            echo "$PR_BODY"
+          elif [ -n "$PR_TITLE" ]; then
+            echo "$PR_TITLE"
+          else
+            echo "Release ${TAG}"
+          fi
+          echo "EOF"
+          echo "commit_lines<<EOF"
+          echo "$COMMIT_LINES"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
       shell: bash
 
-    - name: Summarize release notes (OpenAI)
+    - name: Summarize for chart users (OpenAI)
+      id: summarize
       env:
         OPENAI_API_KEY: ${{ inputs.openai_api_key }}
-        PR_BODY: ${{ steps.pr.outputs.body }}
         OPENAI_MODEL: ${{ inputs.openai_model }}
-      id: summarize
+        PROMPT_EXTRA: ${{ inputs.prompt_instruction }}
+        TAG: ${{ steps.tag.outputs.tag }}
+        CHART: ${{ steps.tag.outputs.chart }}
+        CHART_DESC: ${{ steps.context.outputs.chart_description }}
+        PR_TITLE: ${{ steps.context.outputs.pr_title }}
+        PR_BODY: ${{ steps.context.outputs.pr_body }}
+        COMMIT_LINES: ${{ steps.context.outputs.commit_lines }}
       run: |
-        echo "$PR_BODY" > /tmp/pr_body.txt
-        SUMMARY=$(jq -n --rawfile b /tmp/pr_body.txt --arg model "$OPENAI_MODEL" \
-          '{model:$model,messages:[{role:"user",content:("Summarize this PR in 2-4 short bullet points for release notes. Only output the bullets, no preamble.\n\n" + $b)}],max_tokens:300}' \
-          | curl -s https://api.openai.com/v1/chat/completions \
-            -H "Authorization: Bearer $OPENAI_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @- \
-          | jq -r '.choices[0].message.content // empty')
-        echo "summary<<EOF" >> $GITHUB_OUTPUT
-        echo "${SUMMARY:-$PR_BODY}" >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
+        set -euo pipefail
+        cat > /tmp/release_context.txt <<CTX
+        Chart: ${CHART}
+        Release tag: ${TAG}
+        Chart description: ${CHART_DESC}
+        PR title: ${PR_TITLE}
+        Commits:
+        ${COMMIT_LINES}
+
+        PR / merge description:
+        ${PR_BODY}
+        CTX
+
+        PROMPT='You write GitHub Release notes for a public Helm chart. Audience: homelab operators installing or upgrading the chart.
+
+        Output Markdown with exactly one section header and bullet list:
+
+        ## What'"'"'s changed
+
+        Rules:
+        - 2-6 bullets, plain language, user impact (features, config, fixes, breaking changes)
+        - Prefix breaking changes with **Breaking:**
+        - Omit reviewer content: Proof, Test plan, Why safe, TL;DR tables, Render & validation, checkboxes, PR template boilerplate
+        - If this looks like an initial release or bootstrap CI-only change, describe what the chart provides using the chart description
+        - No text before ## What'"'"'s changed; no install commands (added separately)
+
+        '"${PROMPT_EXTRA}"'
+
+        Context:
+        '
+        jq -n \
+          --arg model "$OPENAI_MODEL" \
+          --rawfile prompt /tmp/release_context.txt \
+          --arg system "$PROMPT" \
+          '{model:$model,messages:[{role:"system",content:$system},{role:"user",content:$prompt}],max_tokens:500,temperature:0.2}' \
+          > /tmp/openai_request.json
+
+        RESPONSE=$(curl -sS https://api.openai.com/v1/chat/completions \
+          -H "Authorization: Bearer $OPENAI_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d @/tmp/openai_request.json)
+
+        SUMMARY=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty')
+        if [ -z "$SUMMARY" ]; then
+          echo "OpenAI summarization failed; using commit-based fallback" >&2
+          SUMMARY="## What's changed
+
+        ${COMMIT_LINES}"
+        fi
+        printf '%s\n' "$SUMMARY" > /tmp/changes.md
+      shell: bash
+
+    - name: Assemble release notes with install block
+      id: assemble
+      run: |
+        set -euo pipefail
+        VERSION="${{ steps.tag.outputs.version }}"
+        REPO="${{ steps.tag.outputs.repo }}"
+        CHART="${{ steps.tag.outputs.chart }}"
+        HELM_REPO="https://expectedbehaviors.github.io/${REPO}"
+        README="https://github.com/expectedbehaviors/${REPO}#readme"
+
+        cat /tmp/changes.md > /tmp/release_notes.md
+        cat >> /tmp/release_notes.md <<NOTES
+
+        ## Install and upgrade
+
+        \`\`\`bash
+        helm repo add ${REPO} ${HELM_REPO}
+        helm repo update
+        helm upgrade --install ${CHART} ${REPO}/${CHART} --version ${VERSION} -f values.yaml
+        \`\`\`
+
+        See the [chart README](${README}) for configuration, dependencies, and examples.
+        NOTES
+
+        echo "summary<<EOF" >> "$GITHUB_OUTPUT"
+        cat /tmp/release_notes.md >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
       shell: bash
 
     - name: Update release body
       env:
         GH_TOKEN: ${{ inputs.github_token }}
-        BODY: ${{ steps.summarize.outputs.summary }}
       run: |
-        gh release edit "${{ steps.tag.outputs.tag }}" --notes "$BODY"
+        set -euo pipefail
+        gh release edit "${{ steps.tag.outputs.tag }}" --notes-file /tmp/release_notes.md
       shell: bash
