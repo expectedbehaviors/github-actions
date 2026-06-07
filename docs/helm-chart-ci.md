@@ -113,6 +113,10 @@ with:
 
 Set `chart_path: deploy/helm` in `with:`.
 
+## Chart.yaml version sync (publish)
+
+After uploading the release tarball, `helm-publish` tries to commit `Chart.yaml` with the released `version` / `appVersion` and push to the default branch. On repos with branch protection (PR required), that push is **best-effort**: publish still succeeds and emits a workflow warning. Bump `Chart.yaml` in a follow-up PR if git drifts from the release tag.
+
 ## Required secrets
 
 | Secret | When |

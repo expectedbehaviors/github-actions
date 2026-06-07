@@ -5,7 +5,7 @@
 # Outputs: tag, version, chart_tarball
 
 name: 'Helm chart publish'
-description: 'Package Helm chart with version from release, upload tarball to GitHub Release, sync Chart.yaml to released version'
+description: 'Package Helm chart with version from release, upload tarball to GitHub Release, best-effort Chart.yaml sync (non-fatal when branch protection blocks push)'
 inputs:
   github_token:
     description: 'GitHub token for gh CLI (pass secrets.GITHUB_TOKEN)'
@@ -133,7 +133,7 @@ runs:
         gh release upload "${{ steps.version.outputs.tag }}" ${{ inputs.chart_name }}-${{ steps.version.outputs.version }}.tgz --clobber
       shell: bash
 
-    - name: Sync Chart.yaml to released version (keep git in sync)
+    - name: Sync Chart.yaml to released version (best-effort)
       run: |
         CHART_PATH="${{ inputs.chart_path }}"
         CHART_YAML="${GITHUB_WORKSPACE}/${CHART_PATH}/Chart.yaml"
@@ -150,7 +150,11 @@ runs:
           echo "Chart.yaml already at $VERSION"
         else
           git -C "$GITHUB_WORKSPACE" commit -m "chore(helm): set Chart.yaml version to $VERSION"
-          git -C "$GITHUB_WORKSPACE" push origin HEAD
+          if git -C "$GITHUB_WORKSPACE" push origin HEAD; then
+            echo "Synced Chart.yaml on default branch to $VERSION"
+          else
+            echo "::warning::Could not push Chart.yaml sync (branch protection may require a PR). Release tarball was uploaded; bump Chart.yaml via PR if needed."
+          fi
         fi
       shell: bash
 
