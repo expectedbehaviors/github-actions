@@ -231,4 +231,8 @@ jobs:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           release_tag: ${{ steps.tag.outputs.tag }}
+          chart_name: ${{ inputs.chart_name }}
+          chart_path: ${{ inputs.chart_path }}
+          tag_prefix: ${{ inputs.tag_prefix }}
+          prompt_instruction: ${{ inputs.prompt_instruction }}
           openai_model: ${{ inputs.openai_model }}

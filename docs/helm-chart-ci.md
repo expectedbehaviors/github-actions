@@ -141,3 +141,18 @@ jobs:
 ```
 
 Caller `permissions` must meet or exceed what the reusable workflow jobs need, or GitHub fails with `startup_failure` before any job runs.
+
+## Release notes format
+
+The `release-notes` action writes **user-facing** notes for chart operators:
+
+- **What's changed** — summarized from the merged PR and commits (not raw PR review templates)
+- **Install and upgrade** — `helm repo add`, `helm upgrade --install` with version and README link
+
+Pass `chart_name` and `tag_prefix` via the reusable workflow (already wired from callers). Optional per-chart `prompt_instruction` for extra guidance.
+
+Regenerate notes for an existing release via **Actions → Helm chart CI → Run workflow** on the chart repo, or:
+
+```bash
+gh workflow run helm-chart-ci.yml --repo expectedbehaviors/<chart> --ref main -f release_tag=<chart>-vX.Y.Z
+```
