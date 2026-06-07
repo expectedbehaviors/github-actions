@@ -126,7 +126,14 @@ jobs:
           values_files: ${{ inputs.values_files }}
 
   release:
-    if: github.event_name == 'push'
+    if: |
+      always() &&
+      !cancelled() &&
+      (needs.validate.result == 'success' || needs.validate.result == 'skipped') &&
+      (
+        github.event_name == 'push' ||
+        (github.event_name == 'workflow_dispatch' && inputs.initial_version != '')
+      )
     needs: validate
     runs-on: ubuntu-latest
     permissions:
@@ -144,7 +151,12 @@ jobs:
           version_bump: ${{ inputs.version_bump }}
 
   publish:
+    needs: release
     if: |
+      always() &&
+      !cancelled() &&
+      !contains(needs.*.result, 'failure') &&
+      (needs.release.result == 'success' || needs.release.result == 'skipped') &&
       inputs.publish_enabled &&
       (
         (github.event_name == 'release' && (inputs.tag_prefix == '' || startsWith(github.event.release.tag_name, inputs.tag_prefix))) ||
@@ -174,7 +186,12 @@ jobs:
           release_tag: ${{ inputs.release_tag }}
 
   release-notes:
+    needs: release
     if: |
+      always() &&
+      !cancelled() &&
+      !contains(needs.*.result, 'failure') &&
+      (needs.release.result == 'success' || needs.release.result == 'skipped') &&
       inputs.release_notes_enabled &&
       (
         (github.event_name == 'release' && (inputs.tag_prefix == '' || startsWith(github.event.release.tag_name, inputs.tag_prefix))) ||
@@ -200,6 +217,8 @@ jobs:
             echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
           elif [ -n "${{ inputs.release_tag }}" ]; then
             echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.initial_version }}" ] && [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag_prefix }}${{ inputs.initial_version }}" >> "$GITHUB_OUTPUT"
           else
             TAG=$(gh api "repos/${{ github.repository }}/releases?per_page=20" -q '[.[] | select(.tag_name | startswith("'"$TAG_PREFIX"'")) | .tag_name][0]')
             [ -z "$TAG" ] || [ "$TAG" = "null" ] && exit 1

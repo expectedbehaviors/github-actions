@@ -72,6 +72,10 @@ runs:
         fi
         PREFIX="${{ inputs.tag_version_prefix }}"
         VERSION="${TAG#$PREFIX}"
+        if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+          echo "::error::Could not resolve chart version from tag '$TAG'. For first release, dispatch with baseline_version or release_tag."
+          exit 1
+        fi
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "tag=$TAG" >> $GITHUB_OUTPUT
         echo "Version: $VERSION"
