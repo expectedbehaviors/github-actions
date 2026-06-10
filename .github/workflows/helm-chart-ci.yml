@@ -159,6 +159,7 @@ jobs:
       (needs.release.result == 'success' || needs.release.result == 'skipped') &&
       inputs.publish_enabled &&
       (
+        github.event_name == 'push' ||
         (github.event_name == 'release' && (inputs.tag_prefix == '' || startsWith(github.event.release.tag_name, inputs.tag_prefix))) ||
         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') ||
         github.event_name == 'workflow_dispatch'
@@ -194,6 +195,7 @@ jobs:
       (needs.release.result == 'success' || needs.release.result == 'skipped') &&
       inputs.release_notes_enabled &&
       (
+        github.event_name == 'push' ||
         (github.event_name == 'release' && (inputs.tag_prefix == '' || startsWith(github.event.release.tag_name, inputs.tag_prefix))) ||
         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') ||
         github.event_name == 'workflow_dispatch'
