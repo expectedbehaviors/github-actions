@@ -10,8 +10,10 @@ Use **one file** in each chart repo that calls **`helm-chart-ci.yml`** in `expec
 |-------|-------------------|------|
 | Validate | `helm-chart-validate` → `helm-lint` → `helm-template` | `pull_request`, `push` |
 | Release | `release-on-merge` | `push` to `main` (after validate) |
-| Publish | `helm-publish` | `release: published`, `workflow_dispatch` (after caller creates a Release on push to `main`) |
+| Publish | `helm-publish` | `push` to `main` (after release), `release: published`, `workflow_dispatch` |
 | Release notes | `release-notes` | same as publish (when enabled) |
+
+Publish runs in the same workflow run as `release-on-merge` on `push`: releases created with the automatic `GITHUB_TOKEN` do **not** trigger new workflow runs, so the `release: published` trigger alone never fires after a merge. The `push` condition chains publish off the release job directly (`needs: release` guarantees the tag exists; the version resolves from the latest GitHub Release).
 
 Terraform, Docker, and other non-Helm actions are **not** part of this workflow.
 
