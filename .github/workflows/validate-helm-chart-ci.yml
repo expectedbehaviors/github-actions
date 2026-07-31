@@ -10,6 +10,7 @@ on:
       - '.github/actions/helm-chart-validate/**'
       - '.github/actions/helm-lint/**'
       - '.github/actions/helm-template/**'
+      - '.github/actions/helm-values-only-validate/**'
   pull_request:
     branches: [main]
     paths:
@@ -18,6 +19,7 @@ on:
       - '.github/actions/helm-chart-validate/**'
       - '.github/actions/helm-lint/**'
       - '.github/actions/helm-template/**'
+      - '.github/actions/helm-values-only-validate/**'
   workflow_dispatch:
 
 jobs:
@@ -34,3 +36,44 @@ jobs:
             exit 1
           fi
           echo "helm-chart-ci.yml registered and parseable"
+
+  validate-values-only-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build a values-only fixture
+        run: |
+          set -euo pipefail
+          mkdir -p fixture/argocd
+          cat > fixture/argocd/app.yaml <<'YAML'
+          chart: cloudnative-pg
+          project: cluster-tools
+          helmRepoURL: https://cloudnative-pg.github.io/charts
+          helmChartRevision: "0.22.0"
+          targetRevision: HEAD
+          valuesRef: values
+          helmValueFiles:
+            - $values/values.yaml
+          YAML
+          cat > fixture/values.yaml <<'YAML'
+          fullnameOverride: fixture-cnpg
+          YAML
+
+      - name: Render the fixture through the action
+        uses: ./.github/actions/helm-values-only-validate
+        with:
+          argocd_path: fixture/argocd
+          values_path: fixture
+          release_name: fixture
+
+      - name: Fail when the pinned values file is absent
+        run: |
+          set -euo pipefail
+          rm fixture/values.yaml
+          if ARGOCD_PATH=fixture/argocd VALUES_PATH=fixture RELEASE_NAME=fixture \
+            python3 .github/actions/helm-values-only-validate/render.py; then
+            echo "expected a failure when the referenced values file is missing"
+            exit 1
+          fi
+          echo "missing values file is reported as a failure, as intended"
