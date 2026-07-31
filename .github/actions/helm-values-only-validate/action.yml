@@ -1,0 +1,38 @@
+name: "Helm values-only validate"
+description: "Render the upstream chart pinned in argocd/*.yaml against this repo's values files"
+
+inputs:
+  argocd_path:
+    description: "Directory containing the Argo CD app manifests"
+    required: false
+    default: "argocd"
+  values_path:
+    description: "Directory the helmValueFiles entries are relative to"
+    required: false
+    default: "."
+  helm_version:
+    description: "Helm version"
+    required: false
+    default: "v3.14.0"
+  release_name:
+    description: "Release name passed to helm template"
+    required: false
+    default: "release"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Helm
+      uses: azure/setup-helm@v4
+      with:
+        version: ${{ inputs.helm_version }}
+
+    - name: Render pinned chart with repo values
+      shell: bash
+      env:
+        ARGOCD_PATH: ${{ inputs.argocd_path }}
+        VALUES_PATH: ${{ inputs.values_path }}
+        RELEASE_NAME: ${{ inputs.release_name }}
+      run: |
+        set -euo pipefail
+        python3 "$GITHUB_ACTION_PATH/render.py"

@@ -11,6 +11,16 @@ on:
         required: false
         type: string
         default: "."
+      chart_paths:
+        description: "Newline-delimited chart directories for repos holding more than one chart; overrides chart_path when set"
+        required: false
+        type: string
+        default: ""
+      values_only:
+        description: "Repo has no Chart.yaml; render the chart pinned in argocd/*.yaml against this repo's values instead"
+        required: false
+        type: boolean
+        default: false
       helm_repositories:
         description: "Newline-delimited name=url pairs for helm repo add"
         required: false
@@ -111,19 +121,76 @@ on:
         required: false
 
 jobs:
-  validate:
+  charts:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - name: Resolve chart directories
+        id: resolve
+        env:
+          CHART_PATH: ${{ inputs.chart_path }}
+          CHART_PATHS: ${{ inputs.chart_paths }}
+        run: |
+          set -euo pipefail
+          paths="$CHART_PATHS"
+          if [ -z "$(echo "$paths" | tr -d '[:space:]')" ]; then
+            paths="$CHART_PATH"
+          fi
+          matrix="$(echo "$paths" | sed '/^[[:space:]]*$/d' | sed 's/[[:space:]]*$//' | jq -R . | jq -sc .)"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "Validating: $matrix"
+
+  validate:
+    needs: charts
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        chart_path: ${{ fromJson(needs.charts.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check for Chart.yaml
+        id: chart
+        env:
+          CHART_PATH: ${{ matrix.chart_path }}
+        run: |
+          set -euo pipefail
+          if [ -f "$CHART_PATH/Chart.yaml" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail on missing Chart.yaml
+        if: steps.chart.outputs.present == 'false' && inputs.values_only == false
+        env:
+          CHART_PATH: ${{ matrix.chart_path }}
+        run: |
+          set -euo pipefail
+          echo "No Chart.yaml in '$CHART_PATH'."
+          echo "Set chart_paths to the real chart directories, or values_only: true for a values-only repo."
+          exit 1
+
       - name: Lint and render chart
+        if: steps.chart.outputs.present == 'true'
         uses: expectedbehaviors/github-actions/.github/actions/helm-chart-validate@main
         with:
-          chart_path: ${{ inputs.chart_path }}
+          chart_path: ${{ matrix.chart_path }}
           helm_repositories: ${{ inputs.helm_repositories }}
           helm_version: ${{ inputs.helm_version }}
           release_name: ${{ inputs.release_name }}
           values_files: ${{ inputs.values_files }}
+
+      - name: Render pinned chart with repo values
+        if: steps.chart.outputs.present == 'false' && inputs.values_only == true
+        uses: expectedbehaviors/github-actions/.github/actions/helm-values-only-validate@main
+        with:
+          values_path: ${{ matrix.chart_path }}
+          helm_version: ${{ inputs.helm_version }}
+          release_name: ${{ inputs.release_name }}
 
   release:
     if: |
